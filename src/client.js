@@ -35,6 +35,13 @@
 
 export default {
   apply(ctx) {
+    // Browser-only plugin. When this bundle is registered as a profile layer
+    // (`dsh.bundle.patch`), the Node-side loader applies it too — where there
+    // is no DOM. Guard here (same pattern the dsh client modules use) so the
+    // server-side application is a harmless no-op and all the real work runs
+    // in the browser, where `document` exists.
+    if (typeof document === 'undefined' || typeof window === 'undefined') return
+
     // ---- package styles: diagram holder, source toggle, error note ----
     // Colors come from dsh theme tokens so the diagram fits light and dark.
     // The browser client runtime exposes no `ctx.styles` service, so inject a
