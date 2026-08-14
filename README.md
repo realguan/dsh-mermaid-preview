@@ -17,23 +17,16 @@
 ### 方式一：dsh 原生命令（推荐）
 
 ```bash
-dsh plugin --profile web add dsh-mermaid-preview
+dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 ```
 
-一条命令完成：pnpm 安装 + 自动注册为 web profile 的 bundle 层 + 重启 `dsh web` 即生效。
+一条命令完成：从 GitHub 克隆 + pnpm 安装 + 自动注册为 web profile 的 bundle 层
++ 重启 `dsh web` 即生效。
 
 > 如果你的 dsh 版本不支持 `dsh plugin`，请先升级 dsh CLI：
 > `npm i -g @deepseek-ai/dsh`
 
-### 方式二：GitHub 仓库安装
-
-```bash
-dsh plugin --profile web add github:realguan/dsh-mermaid-preview
-```
-
-从 GitHub 源码构建安装，适合想参与开发或使用最新 main 分支的用户。
-
-### 方式三：本地路径安装
+### 方式二：本地路径安装
 
 ```bash
 git clone https://github.com/realguan/dsh-mermaid-preview.git
@@ -41,7 +34,7 @@ cd dsh-mermaid-preview && npm run build
 dsh plugin --profile web add .
 ```
 
-### 方式四：动态插件（免安装，会话内定义）
+### 方式三：动态插件（免安装，会话内定义）
 
 如果不想修改 profile，可以在 dsh 会话中让模型执行 `cordis_define`，
 将 `dist/dsh-mermaid-preview.client.js` 的内容粘贴为 `code.client`，

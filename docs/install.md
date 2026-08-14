@@ -12,22 +12,16 @@
 - pnpm（dsh plugin 内部使用）
 - 浏览器可访问 jsDelivr CDN（插件按需加载 Mermaid 库）
 
-### 安装
-
-```bash
-dsh plugin --profile web add dsh-mermaid-preview
-```
-
-这条命令做了三件事：
-1. 用 pnpm 将 `dsh-mermaid-preview` 安装到 web profile 的依赖
-2. 自动识别包内的 `dsh.bundle.patch` 声明，将插件注册为 profile 的 bundle 层
-3. 重启 `dsh web` 后插件自动激活
-
-### 从 GitHub 安装（跟踪最新源码）
+### 从 GitHub 安装（推荐）
 
 ```bash
 dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 ```
+
+这条命令做了三件事：
+1. 用 pnpm 从 GitHub 克隆并安装 `dsh-mermaid-preview` 到 web profile
+2. 自动识别包内的 `dsh.bundle.patch` 声明，将插件注册为 profile 的 bundle 层
+3. 重启 `dsh web` 后插件自动激活
 
 ### 从本地路径安装（参与开发）
 

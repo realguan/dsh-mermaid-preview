@@ -18,24 +18,16 @@ Chat, trajectory, plan review, compaction summaries — every surface rendered b
 ### Option 1: dsh native command (recommended)
 
 ```bash
-dsh plugin --profile web add dsh-mermaid-preview
+dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 ```
 
-One command: pnpm install + auto-register as a web profile bundle layer +
-restart `dsh web` to activate.
+One command: clone from GitHub + pnpm install + auto-register as a web profile
+bundle layer + restart `dsh web` to activate.
 
 > If your dsh version does not support `dsh plugin`, upgrade first:
 > `npm i -g @deepseek-ai/dsh`
 
-### Option 2: Install from GitHub
-
-```bash
-dsh plugin --profile web add github:realguan/dsh-mermaid-preview
-```
-
-Build from source — great for contributing or tracking the latest main.
-
-### Option 3: Local path install
+### Option 2: Local path install
 
 ```bash
 git clone https://github.com/realguan/dsh-mermaid-preview.git
@@ -43,7 +35,7 @@ cd dsh-mermaid-preview && npm run build
 dsh plugin --profile web add .
 ```
 
-### Option 4: Dynamic plugin (no install, define in-session)
+### Option 3: Dynamic plugin (no install, define in-session)
 
 If you prefer not to modify the profile, ask your dsh agent to run
 `cordis_define`, paste the contents of `dist/dsh-mermaid-preview.client.js`
