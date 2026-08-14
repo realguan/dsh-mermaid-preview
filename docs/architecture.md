@@ -77,7 +77,9 @@ MutationObserver(document.body)
 
 所有副作用都挂在插件 fiber 上：
 
-- 样式：`ctx.effect(() => styles.insert(css))` —— 停止/更新插件时自动移除；
+- 样式：在 `ctx.effect` 里创建 `<style>` 元素注入 CSS，并返回 `() => style.remove()`
+  作为清理函数 —— 浏览器端客户端运行时不提供 `styles` 服务，故不依赖它；
+  停止/更新插件时自动移除注入的样式；
 - 观察器：`ctx.effect(() => { observer.observe(…); return () => observer.disconnect() })`；
 - 主题监听：`ctx.on('theme/change', …)` —— Cordis 事件绑定随 fiber 释放。
 

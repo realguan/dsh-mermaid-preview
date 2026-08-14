@@ -37,7 +37,12 @@ return {
   apply(ctx) {
     // ---- package styles: diagram holder, source toggle, error note ----
     // Colors come from dsh theme tokens so the diagram fits light and dark.
-    ctx.effect(() => styles.insert(`
+    // The browser client runtime exposes no `ctx.styles` service, so inject a
+    // <style> element directly and remove it on dispose (fiber-owned cleanup).
+    ctx.effect(() => {
+      const style = document.createElement('style')
+      style.dataset.dshMermaidStyles = '1'
+      style.textContent = `
       .dsh-mermaid { margin: 8px 0; }
       .dsh-mermaid-diagram {
         overflow-x: auto;
@@ -77,7 +82,10 @@ return {
         color: var(--dsw-alias-state-error-primary);
         margin-top: 6px;
       }
-    `))
+      `
+      ;(document.head ?? document.documentElement).append(style)
+      return () => style.remove()
+    })
 
     // Pin a concrete mermaid release for reproducible output. Bump deliberately.
     const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.min.js'
