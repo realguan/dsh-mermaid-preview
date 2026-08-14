@@ -52,13 +52,24 @@ as `code.client`, then run `cordis_run` and approve. See
 
 ### Uninstall
 
+Edit `~/.dsh/profiles/web/package.json` and remove the `"dsh-mermaid-preview"`
+line from `dependencies`, then:
+
 ```bash
-dsh plugin --profile web remove dsh-mermaid-preview
+cd ~/.dsh/profiles/web && pnpm install
 ```
 
 Restart `dsh web` to take effect. Injected styles and observers are removed
 with the profile layer; already-rendered SVGs persist as content and disappear
 on page reload.
+
+### Update
+
+Re-run the install command (pnpm will fetch the latest version):
+
+```bash
+dsh plugin --profile web add dsh-mermaid-preview
+```
 
 ## Features
 

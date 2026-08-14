@@ -39,16 +39,25 @@ dsh plugin --profile web add .
 
 ### 卸载
 
-```bash
-dsh plugin --profile web remove dsh-mermaid-preview
-```
+`dsh plugin` 目前只官方支持 `add` 子命令。卸载请手动操作：
 
-重启 `dsh web` 后生效。
+```bash
+# 1. 编辑 profile 的 package.json，删除 dsh-mermaid-preview 依赖
+# 文件位置：~/.dsh/profiles/web/package.json
+# 删除 dependencies 里的 "dsh-mermaid-preview": "..." 一行
+
+# 2. 运行 pnpm install 使变更生效
+cd ~/.dsh/profiles/web && pnpm install
+
+# 3. 重启 dsh web
+```
 
 ### 更新
 
+重新执行安装命令即可（pnpm 会自动拉取最新版本）：
+
 ```bash
-dsh plugin --profile web update dsh-mermaid-preview
+dsh plugin --profile web add dsh-mermaid-preview
 ```
 
 ---

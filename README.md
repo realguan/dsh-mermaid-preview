@@ -49,12 +49,23 @@ dsh plugin --profile web add .
 
 ### 卸载
 
+编辑 `~/.dsh/profiles/web/package.json`，删除 `dependencies` 里的
+`"dsh-mermaid-preview"` 一行，然后：
+
 ```bash
-dsh plugin --profile web remove dsh-mermaid-preview
+cd ~/.dsh/profiles/web && pnpm install
 ```
 
 重启 `dsh web` 后生效。插件注入的样式和 DOM 观察器随 profile 层移除而清理；
 已渲染的 SVG 保留（属于内容），重新加载页面即恢复原样。
+
+### 更新
+
+重新执行安装命令即可（pnpm 会自动拉取最新版本）：
+
+```bash
+dsh plugin --profile web add dsh-mermaid-preview
+```
 
 ## 特性
 
