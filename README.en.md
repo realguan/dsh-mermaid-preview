@@ -42,6 +42,20 @@ If you prefer not to modify the profile, ask your dsh agent to run
 as `code.client`, then run `cordis_run` and approve. See
 [docs/install.md](./docs/install.md) for details.
 
+> #### 🧩 The two build artifacts (`npm run build` produces both)
+>
+> Two client artifacts, with different mechanisms:
+>
+> | Artifact | Use | Format | Load path |
+> | --- | --- | --- | --- |
+> | `dist/dsh-mermaid-preview.client.js` | dynamic plugin (`cordis_define`) | function body `return {...}` | in-session dynamic runner |
+> | `dist/dsh-mermaid-preview.bundle.js` | native bundle (`dsh plugin add`) | `__ModuleLoader__.load({id, factory})` | web profile `client-modules` |
+>
+> `dsh plugin add` depends on the **bundle artifact**: the package's `exports`
+> must expose `./package.json` and point `./client` at the bundle. After editing
+> `src/client.js` always run `npm run build` and reinstall, or the native path
+> won't pick up the new markup logic.
+
 ### Uninstall
 
 Edit `~/.dsh/profiles/web/package.json` and remove the `"dsh-mermaid-preview"`
@@ -118,9 +132,11 @@ Architecture, design trade-offs and known limits:
 
 ```
 cordis.yml             dsh bundle composition (read by dsh plugin add)
-src/client.js          the one plugin source (ES module)
-scripts/build-dynamic.mjs    generates the dist paste payload
-dist/                  dynamic plugin payload (ready to paste)
+src/client.js          the one plugin source (ES module; apply holds all logic)
+scripts/build-dynamic.mjs       generates the dist dynamic paste payload
+scripts/build-client-bundle.mjs generates the dist native bundle client half
+dist/dsh-mermaid-preview.client.js   dynamic plugin payload (for cordis_define)
+dist/dsh-mermaid-preview.bundle.js   native bundle (loaded by dsh plugin add)
 demo/                  dependency-free standalone demo
 examples/showcase.md   diagram-type examples
 docs/install.md        install / uninstall / update / FAQ
@@ -140,6 +156,13 @@ docs/architecture.md   internals and security notes
 
 ## FAQ
 
+- **No render at all (fence stays plain)** — first confirm the plugin is in the
+  browser boot manifest `window.__DSH_BOOT__`. If it's missing and
+  `/plugins/dsh-mermaid-preview/client.js` returns 404, you are likely on an old
+  release (≤ 0.2.0, no bundle artifact) or edited source without reinstalling.
+  Upgrade and reinstall, then restart:
+  `dsh plugin --profile web add github:realguan/dsh-mermaid-preview`
+  (details: FAQ in [docs/install.md](./docs/install.md)).
 - **No render, CDN load error** — offline or jsDelivr unreachable. Change the
   `CDN` constant in `src/client.js`, `npm run build`, then update the plugin.
 - **No render while streaming** — by design; rendering happens after settle.

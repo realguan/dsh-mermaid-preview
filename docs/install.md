@@ -12,6 +12,14 @@
 - pnpm（dsh plugin 内部使用）
 - 浏览器可访问 jsDelivr CDN（插件按需加载 Mermaid 库）
 
+> **两种客户端产物**：`npm run build` 会同时产出两份代码，加载机制不同——
+> `dist/dsh-mermaid-preview.bundle.js` 是原生 bundle（`dsh plugin add` 用，格式为
+> `__ModuleLoader__.load({id, factory})`），`dist/dsh-mermaid-preview.client.js`
+> 是动态插件载荷（`cordis_define` 用，格式为函数体 `return {...}`）。
+> 原生安装链（web 的 `client-modules`）通过 `package.json` 的 `exports` 发现
+> 客户端插件——它必须暴露 `./package.json`，并把 `./client` 指向 bundle 产物。
+> 改了 `src/client.js` 后请先 `npm run build` 再重装，否则原生路径拿不到新逻辑。
+
 ### 从 GitHub 安装（推荐）
 
 ```bash
@@ -127,6 +135,32 @@ cordis_run <pluginId> <新packageId>  # mode = update
 ---
 
 ## 常见问题
+
+### 原生安装后完全不渲染（围栏只是普通代码块）？
+
+先确认 `dsh-mermaid-preview` 是否真的进了浏览器启动清单：
+
+```
+# 打开 dsh web 页面，按 F12 在 console 里执行：
+JSON.stringify(window.__DSH_BOOT__).includes('dsh-mermaid-preview')
+```
+
+返回 `false`、且 `http://127.0.0.1:3080/plugins/dsh-mermaid-preview/client.js`
+返回 404，说明插件客户端没被加载。常见原因与对策：
+
+- **装的是旧版本**（≤ 0.2.0，`exports` 没暴露 `./package.json` 或 `./client` 指向
+  原始 ESM）。原生命令的加载链（web 的 `client-modules`）通过 `require.resolve(
+  <pkg>/package.json)` 发现插件并读取 `exports`。旧包会因为 `./package.json` 不在
+  `exports` 里而解析失败，被永久判定为「非客户端插件」——**重启也无法修复**，
+  必须重装到新版本：
+  ```bash
+  dsh plugin --profile web add github:realguan/dsh-mermaid-preview
+  # 然后重启 dsh web
+  ```
+- **改过源码没重装 bundle**：改了 `src/client.js` 后要先 `npm run build` 再重装，
+  否则原生路径读到的还是旧 bundle。
+- 检查后仍异常：在 profile 目录 `~/.dsh/profiles/web` 下确认 package.json 的
+  `dependencies` 里有 `dsh-mermaid-preview`、且 `dsh.profile.bundles` 里也有它。
 
 ### 图表没有渲染，代码块下方出现红色提示
 

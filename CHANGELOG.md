@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-08-14
+
+### Fixed
+
+- Native `dsh plugin add` install actually loaded: the previous release only
+  shipped the dynamic-runner payload, so the web `client-modules` loader never
+  served the plugin (404 on `/plugins/dsh-mermaid-preview/client.js`, absent from
+  `window.__DSH_BOOT__`) and nothing rendered. Two changes fix it:
+  - `package.json` `exports` now exposes `./package.json` (required for the
+    client-modules manifest discovery scan).
+  - `exports["./client"]` now points at a browser-loadable bundle
+    (`dist/dsh-mermaid-preview.bundle.js`) that calls
+    `window.__ModuleLoader__.load({ id, factory })` with a CommonJS factory
+    exporting `apply` — the same shape dsh's own native client plugins use.
+- Added `scripts/build-client-bundle.mjs` to derive that native bundle from
+  `src/client.js`; `npm run build`/`check` now emit and verify both artifacts
+  (dynamic payload + native bundle).
+
 ## [0.2.0] - 2026-08-14
 
 ### Added

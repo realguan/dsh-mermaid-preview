@@ -40,6 +40,19 @@ dsh plugin --profile web add .
 将 `dist/dsh-mermaid-preview.client.js` 的内容粘贴为 `code.client`，
 再执行 `cordis_run` 并允许。详见 [docs/install.md](./docs/install.md)。
 
+> #### 🧩 关于两种安装产物（build 后自动生成）
+>
+> `npm run build` 会同时产出两份客户端代码，机制和格式完全不同：
+>
+> | 产物 | 用途 | 格式 | 加载链 |
+> | --- | --- | --- | --- |
+> | `dist/dsh-mermaid-preview.client.js` | 动态插件（`cordis_define`） | 函数体 `return {...}` | 会话内动态 runner |
+> | `dist/dsh-mermaid-preview.bundle.js` | 原生 bundle（`dsh plugin add`） | `__ModuleLoader__.load({id, factory})` | web profile 的 `client-modules` |
+>
+> `dsh plugin add` 依赖 **bundle 产物**：它要求 package.json 的 `exports` 暴露
+> `./package.json`、并把 `./client` 指向 bundle。改了 `src/client.js` 后务必
+> `npm run build` 再重装，否则原生安装拿不到新渲染逻辑。
+
 ### 卸载
 
 编辑 `~/.dsh/profiles/web/package.json`，删除 `dependencies` 里的
@@ -108,9 +121,11 @@ flowchart LR
 
 ```
 cordis.yml             dsh bundle composition（dsh plugin add 读取）
-src/client.js          插件唯一源码（ES module）
-scripts/build-dynamic.mjs    生成 dist 粘贴载荷
-dist/                  动态插件载荷（开箱即用）
+src/client.js          插件唯一源码（ES module，apply 即全部逻辑）
+scripts/build-dynamic.mjs      生成 dist 动态粘贴载荷
+scripts/build-client-bundle.mjs 生成 dist 原生 bundle 客户端半体
+dist/dsh-mermaid-preview.client.js   动态插件载荷（cordis_define 粘贴用）
+dist/dsh-mermaid-preview.bundle.js   原生 bundle（dsh plugin add 加载用）
 demo/                  零依赖独立演示页
 examples/showcase.md   图型示例合集
 docs/install.md        安装 / 卸载 / 更新 / FAQ
@@ -130,6 +145,11 @@ docs/architecture.md   实现原理与安全说明
 
 ## 常见问题
 
+- **完全不渲染（围栏只是普通代码块）**：先确认插件进了浏览器启动清单
+  `window.__DSH_BOOT__`。若没有、`/plugins/dsh-mermaid-preview/client.js` 返回
+  404，通常是你装的是旧版本（≤ 0.2.0，缺 bundle 产物）或改了源码没重装。
+  升级到新版本后重装并重启：`dsh plugin --profile web add github:realguan/dsh-mermaid-preview`
+  （详见 [docs/install.md](./docs/install.md) 的 FAQ）。
 - **没渲染且报 CDN 加载失败**：离线环境或 jsDelivr 不可达。修改
   `src/client.js` 的 `CDN` 常量后 `npm run build` 再更新插件。
 - **流式过程中不渲染**：设计如此，消息结束后才渲染。
