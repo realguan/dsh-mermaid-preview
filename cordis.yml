@@ -1,0 +1,7 @@
+# dsh-mermaid-preview bundle composition
+# Inserted into the dsh web profile via `dsh plugin --profile web add dsh-mermaid-preview`
+# This adds the Mermaid rendering client plugin to every Markdown surface.
+
+- insert:
+    - id: mermaid-preview
+      name: dsh-mermaid-preview

@@ -1,16 +1,29 @@
 {
   "name": "dsh-mermaid-preview",
-  "version": "0.1.0",
-  "description": "Render Mermaid fenced code blocks as diagrams anywhere in DeepSeek Harness (dsh) web — chat, trajectory, plan review and every other Markdown surface. A dynamic Cordis client plugin, plus a dependency-free standalone demo.",
+  "version": "0.2.0",
+  "description": "Render Mermaid fenced code blocks as diagrams in DeepSeek Harness (dsh) web — chat, trajectory, plan review and every other Markdown surface.",
   "type": "module",
   "main": "src/client.js",
   "exports": {
     ".": "./src/client.js",
+    "./client": "./src/client.js",
     "./dynamic": "./dist/dsh-mermaid-preview.client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    }
   },
   "files": [
     "src",
     "dist",
+    "cordis.yml",
     "demo",
     "examples",
     "docs",
@@ -26,8 +39,8 @@
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "cordis",
-    "plugin",
     "mermaid",
     "diagram",
     "markdown"

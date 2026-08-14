@@ -1,34 +1,71 @@
 # 安装指南
 
-dsh（DeepSeek Harness）的 Web 界面支持两种插件机制：
-
-1. **动态 Cordis 插件**（本仓库的主要安装方式）—— 无需改源码、无需构建，
-   在会话里直接定义并运行，适合任何 dsh 部署。
-2. **静态客户端插件** —— 把插件作为源码并入自建 dsh 分支并重新构建 Web
-   产物，适合深度定制部署。
-
-本指南以方式一为主。
+本插件支持多种安装方式，按推荐程度排序。
 
 ---
 
-## 方式一：动态插件（推荐）
+## 方式一：dsh 原生命令安装（推荐）
 
 ### 前置条件
 
-- 一个运行中的 dsh Web 会话（`dsh web`）。
-- 浏览器可访问 jsDelivr CDN（插件按需加载 Mermaid 库）。
+- dsh CLI ≥ 0.1.0-rc（支持 `dsh plugin` 命令）
+- pnpm（dsh plugin 内部使用）
+- 浏览器可访问 jsDelivr CDN（插件按需加载 Mermaid 库）
+
+### 安装
+
+```bash
+dsh plugin --profile web add dsh-mermaid-preview
+```
+
+这条命令做了三件事：
+1. 用 pnpm 将 `dsh-mermaid-preview` 安装到 web profile 的依赖
+2. 自动识别包内的 `dsh.bundle.patch` 声明，将插件注册为 profile 的 bundle 层
+3. 重启 `dsh web` 后插件自动激活
+
+### 从 GitHub 安装（跟踪最新源码）
+
+```bash
+dsh plugin --profile web add github:realguan/dsh-mermaid-preview
+```
+
+### 从本地路径安装（参与开发）
+
+```bash
+git clone https://github.com/realguan/dsh-mermaid-preview.git
+cd dsh-mermaid-preview && npm run build
+dsh plugin --profile web add .
+```
+
+### 卸载
+
+```bash
+dsh plugin --profile web remove dsh-mermaid-preview
+```
+
+重启 `dsh web` 后生效。
+
+### 更新
+
+```bash
+dsh plugin --profile web update dsh-mermaid-preview
+```
+
+---
+
+## 方式二：动态插件（会话内定义，免 profile 修改）
+
+适用于临时试用或无法使用 `dsh plugin` 命令的场景。
 
 ### 安装步骤
 
-1. 打开任意会话，让模型执行 Cordis 插件定义：
+1. 打开任意 dsh 会话，让模型执行：
 
    ```
    cordis_define
    ```
 
-2. 在 `code.client` 参数中粘贴 **`dist/dsh-mermaid-preview.client.js`** 的完整
-   内容（那是 `cordis_define` 所需的函数体文本，已由
-   `npm run build` 从 `src/client.js` 生成）。
+2. 在 `code.client` 参数中粘贴 **`dist/dsh-mermaid-preview.client.js`** 的完整内容。
 
    参数建议：
 
@@ -49,18 +86,12 @@ dsh（DeepSeek Harness）的 Web 界面支持两种插件机制：
 
 5. 验证：发送一条包含 ````` ```mermaid ```` 围栏的消息，代码块应被渲染成图表。
 
-> 提示：模型通常也会读取本仓库的 `src/client.js` 并自行生成等价代码；两者
-> 效果一致，但使用 `dist/` 载荷可保证与仓库中的验证版本逐字节一致。
-
 ### 卸载
 
 ```
 cordis_stop <pluginId>   # 停用（保留定义，可随时再启动）
 cordis_undefine <pluginId>  # 彻底删除
 ```
-
-停止插件会立即移除其注入的样式、DOM 观察器与主题监听；已渲染的 SVG 会
-保留在页面上（属于内容而非插件副作用），重新加载页面即恢复原样。
 
 ### 更新
 
@@ -73,21 +104,21 @@ cordis_run <pluginId> <新packageId>  # mode = update
 
 ---
 
-## 方式二：静态挂载（自建 dsh 分支）
+## 方式三：自建 dsh 分支静态挂载
 
-适用于你维护自己的 dsh 部署（fork deepseek-harness）并希望插件随 Web 产物
-一起构建的场景。概括步骤如下（具体路径以你的分支版本为准）：
+适用于你维护自己的 dsh 部署（fork deepseek-harness）的场景。本仓库已经包含
+`dsh.bundle.patch` 和 `dsh.client.inject` 声明，兼容 dsh 的 bundle 插件体系。
+
+概括步骤（具体路径以你的分支版本为准）：
 
 1. 将本仓库作为 workspace 包加入（`pnpm-workspace.yaml` 增加一行，例如
-   `plugins/*`），并把 `src/client.js` 按 dsh 客户端插件约定改写为
-   TypeScript 模块（`export default` 的 Cordis 插件对象 + 可选的
-   `dsh.client.inject` 声明）。
-2. 在 Web 组合（composition）中注册该客户端插件行，使构建器把它纳入
-   客户端入口图。
-3. 重新构建 Web 产物并部署。
+   `plugins/*`）。
+2. 确保 `src/client.js` 的 TypeScript 等价版本通过构建（或直接用 JS）。
+3. 本仓库的 `cordis.yml` 已经声明了 `insert` 行，会自动注册客户端插件。
+4. 重新构建 Web 产物并部署。
 
-> 注意：dsh 的客户端插件运行时（`cordis-client-runner`）只对**动态**包开放
-> DOM 全局（`document`/`window`）；静态插件同样可用，但请以你 fork 的
+> 注意：dsh 的客户端插件运行时（`cordis-client-runner`）对**动态**包开放
+> DOM 全局（`document`/`window`）；静态 bundle 插件同样可用，但请以你 fork 的
 > `packages/extensions/cordis-client-runner` 源码为准。
 
 ---

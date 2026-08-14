@@ -13,45 +13,79 @@ Chat, trajectory, plan review, compaction summaries — every surface rendered b
 
 > 中文 README: [README.md](./README.md)
 
+## Install
+
+### Option 1: dsh native command (recommended)
+
+```bash
+dsh plugin --profile web add dsh-mermaid-preview
+```
+
+One command: pnpm install + auto-register as a web profile bundle layer +
+restart `dsh web` to activate.
+
+> If your dsh version does not support `dsh plugin`, upgrade first:
+> `npm i -g @deepseek-ai/dsh`
+
+### Option 2: Install from GitHub
+
+```bash
+dsh plugin --profile web add github:realguan/dsh-mermaid-preview
+```
+
+Build from source — great for contributing or tracking the latest main.
+
+### Option 3: Local path install
+
+```bash
+git clone https://github.com/realguan/dsh-mermaid-preview.git
+cd dsh-mermaid-preview && npm run build
+dsh plugin --profile web add .
+```
+
+### Option 4: Dynamic plugin (no install, define in-session)
+
+If you prefer not to modify the profile, ask your dsh agent to run
+`cordis_define`, paste the contents of `dist/dsh-mermaid-preview.client.js`
+as `code.client`, then run `cordis_run` and approve. See
+[docs/install.md](./docs/install.md) for details.
+
+### Uninstall
+
+```bash
+dsh plugin --profile web remove dsh-mermaid-preview
+```
+
+Restart `dsh web` to take effect. Injected styles and observers are removed
+with the profile layer; already-rendered SVGs persist as content and disappear
+on page reload.
+
 ## Features
 
 - 🖼️ **No shell changes** — takes over `mermaid` fences via DOM observation;
   zero modification to dsh source
-- ⚡ **No build to install** — dynamic plugin, fits any dsh deployment
+- ⚡ **One-command install** — `dsh plugin add` handles registration and deps
 - 🌗 **Theme-aware** — follows the dsh light/dark theme and re-renders on switch
 - 📋 **Keeps interactions** — the original copy button still works, plus a
   diagram/source toggle
 - 🛟 **Graceful fallback** — keeps the code block with an inline note on CDN or
   syntax failure
-- 🧹 **Clean unload** — styles, observer and listeners are removed on stop
+- 🧹 **Clean uninstall** — styles, observer and listeners are removed on stop
 - 🧪 **Standalone demo** — `demo/` is a dependency-free HTML page that works
   without dsh
 - 📚 **Many diagram types** — flowchart / sequenceDiagram / classDiagram /
   stateDiagram-v2 / gantt / pie / erDiagram / journey / mindmap / gitGraph / timeline
 
-## Quick start
-
-### Install in dsh (dynamic plugin, ~1 minute)
-
-1. Ask your dsh agent to run `cordis_define`.
-2. Paste the whole content of **`dist/dsh-mermaid-preview.client.js`** as
-   `code.client`.
-3. Run `cordis_run` and approve on the Run card.
-4. Send a message containing a `mermaid` fence to verify.
-
-Full steps, uninstall and update: [docs/install.md](./docs/install.md).
-
-### Try the standalone demo (no dsh needed)
+## Try the standalone demo (no dsh needed)
 
 ```bash
 npm run demo        # → http://localhost:8090
-# or point any static file server at demo/
 ```
 
 Edit Mermaid source on the left (10+ built-in presets), live render on the
 right, theme selectable.
 
-### Examples
+## Examples
 
 [examples/showcase.md](./examples/showcase.md) — paste-ready sources for 11
 diagram types; the same presets live in `demo/demo.js`.
@@ -80,13 +114,14 @@ Architecture, design trade-offs and known limits:
 ## Layout
 
 ```
-src/client.js                the one plugin source (ES module)
+cordis.yml             dsh bundle composition (read by dsh plugin add)
+src/client.js          the one plugin source (ES module)
 scripts/build-dynamic.mjs    generates the dist paste payload
-dist/dsh-mermaid-preview.client.js   dynamic plugin payload (ready to paste)
-demo/                        dependency-free standalone demo
-examples/showcase.md         diagram-type examples
-docs/install.md              install / uninstall / update / FAQ
-docs/architecture.md         internals and security notes
+dist/                  dynamic plugin payload (ready to paste)
+demo/                  dependency-free standalone demo
+examples/showcase.md   diagram-type examples
+docs/install.md        install / uninstall / update / FAQ
+docs/architecture.md   internals and security notes
 ```
 
 ## Tech notes
@@ -94,7 +129,7 @@ docs/architecture.md         internals and security notes
 | Item | Value |
 | --- | --- |
 | Platform | dsh web (client) |
-| Plugin form | dynamic Cordis client plugin (`code.client`) |
+| Plugin form | dsh bundle client plugin (`dsh plugin add`) |
 | Mermaid | 11.16.1 (UMD, jsDelivr CDN, mirror-swappable) |
 | Dependencies | none at runtime; scripts use Node built-ins only |
 | Security | `securityLevel: 'strict'`; no data collection |

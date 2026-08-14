@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-14
+
+### Added
+
+- `dsh bundle` support: `package.json` now declares `dsh.bundle.patch` and
+  `dsh.client.inject`, enabling native installation via `dsh plugin --profile web add`.
+- `cordis.yml` composition file for automatic plugin registration.
+- `assets/banner.png` repository banner (1280×640, dark gradient).
+- README.md / README.en.md embed the banner image.
+
+### Changed
+
+- Installation docs now lead with `dsh plugin add` as the primary method.
+- Dynamic plugin (cordis_define) demoted to Option 4 / fallback.
+
 ## [0.1.0] - 2026-08-14
 
 ### Added
