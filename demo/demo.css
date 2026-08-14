@@ -1,0 +1,176 @@
+/* dsh-mermaid-preview standalone demo — mirrors the plugin's container styling. */
+
+:root {
+  --bg: #f6f7f9;
+  --bg-panel: #ffffff;
+  --bg-editor: #1e1f24;
+  --text: #1c1e21;
+  --text-dim: #6b7280;
+  --border: #e2e5ea;
+  --accent: #4f6ef7;
+  --error: #e5484d;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.topbar {
+  padding: 20px 28px 8px;
+}
+.topbar h1 {
+  margin: 0;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.sub {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.sub code {
+  background: var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 5fr) minmax(320px, 6fr);
+  gap: 16px;
+  padding: 12px 28px 28px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+.pane {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.toolbar label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.toolbar select {
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+}
+.toolbar button {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+#source {
+  width: 100%;
+  height: 62vh;
+  border: 0;
+  outline: none;
+  resize: vertical;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  background: var(--bg-editor);
+  color: #d7dbe3;
+  tab-size: 2;
+}
+#source:focus { box-shadow: inset 0 0 0 1px var(--accent); }
+
+.preview { min-height: 62vh; display: flex; flex-direction: column; }
+
+/* Mirror of the plugin's .dsh-mermaid-diagram */
+.dsh-mermaid-diagram {
+  flex: 1;
+  overflow-x: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 16px;
+}
+.dsh-mermaid-diagram[hidden] { display: none; }
+.dsh-mermaid-diagram svg { max-width: 100%; height: auto; }
+.placeholder { color: var(--text-dim); font-size: 13px; }
+
+.dsh-mermaid-source {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+.dsh-mermaid-source[hidden] { display: none; }
+
+.dsh-mermaid-error {
+  font-size: 13px;
+  color: var(--error);
+  white-space: pre-wrap;
+}
+
+.footbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.footbar button {
+  font-size: 12px;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.footbar button:hover { border-color: var(--accent); color: var(--accent); }
+.status { font-size: 12px; color: var(--text-dim); }
+.status.ok { color: #2f9e44; }
+.status.err { color: var(--error); }

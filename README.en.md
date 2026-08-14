@@ -1,0 +1,122 @@
+# dsh-mermaid-preview
+
+A Cordis client plugin that renders Markdown `mermaid` fenced code blocks as
+diagrams inside the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+(dsh) web UI.
+
+Chat, trajectory, plan review, compaction summaries — every surface rendered by
+`MarkdownText` gets Mermaid support from one hook.
+
+> 中文 README: [README.md](./README.md)
+
+## Features
+
+- 🖼️ **No shell changes** — takes over `mermaid` fences via DOM observation;
+  zero modification to dsh source
+- ⚡ **No build to install** — dynamic plugin, fits any dsh deployment
+- 🌗 **Theme-aware** — follows the dsh light/dark theme and re-renders on switch
+- 📋 **Keeps interactions** — the original copy button still works, plus a
+  diagram/source toggle
+- 🛟 **Graceful fallback** — keeps the code block with an inline note on CDN or
+  syntax failure
+- 🧹 **Clean unload** — styles, observer and listeners are removed on stop
+- 🧪 **Standalone demo** — `demo/` is a dependency-free HTML page that works
+  without dsh
+- 📚 **Many diagram types** — flowchart / sequenceDiagram / classDiagram /
+  stateDiagram-v2 / gantt / pie / erDiagram / journey / mindmap / gitGraph / timeline
+
+## Quick start
+
+### Install in dsh (dynamic plugin, ~1 minute)
+
+1. Ask your dsh agent to run `cordis_define`.
+2. Paste the whole content of **`dist/dsh-mermaid-preview.client.js`** as
+   `code.client`.
+3. Run `cordis_run` and approve on the Run card.
+4. Send a message containing a `mermaid` fence to verify.
+
+Full steps, uninstall and update: [docs/install.md](./docs/install.md).
+
+### Try the standalone demo (no dsh needed)
+
+```bash
+npm run demo        # → http://localhost:8090
+# or point any static file server at demo/
+```
+
+Edit Mermaid source on the left (10+ built-in presets), live render on the
+right, theme selectable.
+
+### Examples
+
+[examples/showcase.md](./examples/showcase.md) — paste-ready sources for 11
+diagram types; the same presets live in `demo/demo.js`.
+
+## How it works (30 seconds)
+
+dsh's Markdown renderer emits a stable `.md-code-block` structure for unknown
+languages (including `mermaid`): a banner with the language label and a plain
+`<pre><code>` body. The plugin observes `document.body` with a
+`MutationObserver`, loads Mermaid 11 on demand via a `<script>` tag
+(jsDelivr CDN), and replaces the `<pre>` with the rendered SVG — keeping the
+banner and copy button intact.
+
+```mermaid
+flowchart LR
+    A[MarkdownText<br/>renders .md-code-block] -->|MutationObserver finds mermaid fence| B[Load Mermaid 11<br/>jsDelivr CDN]
+    B --> C[Read source from pre]
+    C --> D[mermaid.render<br/>securityLevel strict]
+    D --> E[SVG replaces pre]
+    E --> F[Banner + copy kept<br/>diagram/source toggle]
+```
+
+Architecture, design trade-offs and known limits:
+[docs/architecture.md](./docs/architecture.md).
+
+## Layout
+
+```
+src/client.js                the one plugin source (ES module)
+scripts/build-dynamic.mjs    generates the dist paste payload
+dist/dsh-mermaid-preview.client.js   dynamic plugin payload (ready to paste)
+demo/                        dependency-free standalone demo
+examples/showcase.md         diagram-type examples
+docs/install.md              install / uninstall / update / FAQ
+docs/architecture.md         internals and security notes
+```
+
+## Tech notes
+
+| Item | Value |
+| --- | --- |
+| Platform | dsh web (client) |
+| Plugin form | dynamic Cordis client plugin (`code.client`) |
+| Mermaid | 11.16.1 (UMD, jsDelivr CDN, mirror-swappable) |
+| Dependencies | none at runtime; scripts use Node built-ins only |
+| Security | `securityLevel: 'strict'`; no data collection |
+| License | MIT |
+
+## FAQ
+
+- **No render, CDN load error** — offline or jsDelivr unreachable. Change the
+  `CDN` constant in `src/client.js`, `npm run build`, then update the plugin.
+- **No render while streaming** — by design; rendering happens after settle.
+- **No re-render on theme switch** — make sure your dsh version fires the
+  `theme/change` event.
+
+More in the FAQ section of [docs/install.md](./docs/install.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). After changing `src/client.js`, run
+`npm run build` and commit the `dist/` artifact too.
+
+## Acknowledgements
+
+- [mermaid](https://github.com/mermaid-js/mermaid) — the diagram engine
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the platform
+- [jsDelivr](https://www.jsdelivr.com/) — CDN distribution
+
+## License
+
+[MIT](./LICENSE) © 2026 realguan

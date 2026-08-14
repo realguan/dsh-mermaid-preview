@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>dsh-mermaid-preview · 独立演示</title>
+  <link rel="stylesheet" href="./demo.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>dsh-mermaid-preview <span class="badge">standalone demo</span></h1>
+    <p class="sub">
+      与 dsh 插件同源的渲染逻辑：左侧写 Mermaid 源码，右侧实时出图。
+      支持 <code>flowchart / sequenceDiagram / classDiagram / stateDiagram-v2 / gantt /
+      pie / erDiagram / journey / mindmap / gitGraph / timeline</code> 等。
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="pane editor">
+      <div class="toolbar">
+        <label for="preset">示例</label>
+        <select id="preset">
+          <option value="flowchart">流程图 flowchart</option>
+          <option value="sequence">时序图 sequenceDiagram</option>
+          <option value="class">类图 classDiagram</option>
+          <option value="state">状态图 stateDiagram-v2</option>
+          <option value="gantt">甘特图 gantt</option>
+          <option value="pie">饼图 pie</option>
+          <option value="er">ER 图 erDiagram</option>
+          <option value="journey">旅程图 journey</option>
+          <option value="mindmap">思维导图 mindmap</option>
+          <option value="git">Git 图 gitGraph</option>
+          <option value="timeline">时间线 timeline</option>
+        </select>
+        <label for="theme">主题</label>
+        <select id="theme">
+          <option value="default">default（亮色）</option>
+          <option value="dark">dark（暗色）</option>
+          <option value="neutral">neutral</option>
+          <option value="forest">forest</option>
+        </select>
+        <button id="copy" type="button">复制源码</button>
+      </div>
+      <textarea id="source" spellcheck="false" autocomplete="off"></textarea>
+    </section>
+
+    <section class="pane preview">
+      <div id="output" class="dsh-mermaid-diagram"><p class="placeholder">等待渲染…</p></div>
+      <pre id="sourceView" class="dsh-mermaid-source" hidden></pre>
+      <div class="footbar">
+        <button id="toggle" type="button" hidden>显示源码</button>
+        <span id="status" class="status"></span>
+      </div>
+    </section>
+  </main>
+
+  <script src="./demo.js" type="module"></script>
+</body>
+</html>
