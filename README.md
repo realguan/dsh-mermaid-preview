@@ -1,5 +1,9 @@
 # dsh-mermaid-preview
 
+<p align="center">
+  <img src="assets/banner.png" alt="dsh-mermaid-preview banner" width="100%" />
+</p>
+
 在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）Web
 界面中，把 Markdown 的 `mermaid` 围栏代码块渲染为图表的 Cordis 客户端插件。
 

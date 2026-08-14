@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>dsh-mermaid-preview banner</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: radial-gradient(1200px 500px at 85% -10%, #1e2a4a 0%, #10141f 55%, #0b0e16 100%);
+    color: #e6e9f0;
+    display: flex;
+    flex-direction: column;
+    padding: 44px 56px 36px;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .logo {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    background: linear-gradient(90deg, #8ab4ff, #c9a0ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .badge {
+    font-size: 12px;
+    font-weight: 500;
+    color: #7ee2a8;
+    border: 1px solid rgba(126, 226, 168, 0.45);
+    border-radius: 999px;
+    padding: 3px 12px;
+    white-space: nowrap;
+  }
+  .sub {
+    margin-top: 10px;
+    font-size: 15px;
+    color: #9aa3b5;
+  }
+  .sub code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    padding: 1px 7px;
+    color: #c3cde0;
+  }
+  .stage {
+    flex: 1;
+    margin-top: 26px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 10px;
+  }
+  .dsh-mermaid-diagram { width: 100%; height: 100%; overflow: auto; display: flex; justify-content: center; align-items: center; }
+  .dsh-mermaid-diagram svg { max-width: 100%; max-height: 100%; }
+  .foot {
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: #6d7687;
+  }
+  .foot .tag { color: #8a94a8; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="logo">dsh-mermaid-preview</span>
+    <span class="badge">dsh-plugin · cordis · MIT</span>
+  </div>
+  <div class="sub">
+    Render <code>mermaid</code> fenced code blocks as diagrams in
+    <code>DeepSeek Harness</code> web — chat · trajectory · every Markdown surface
+  </div>
+  <div class="stage"><div class="dsh-mermaid-diagram" id="diagram"></div></div>
+  <div class="foot">
+    <span>dynamic Cordis client plugin · no shell changes</span>
+    <span class="tag">github.com/realguan/dsh-mermaid-preview</span>
+  </div>
+
+  <script>
+    const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.min.js'
+    const CODE = `flowchart LR
+    subgraph 人类侧
+        Owner[责任人<br/>审核与问责]
+    end
+
+    subgraph 平台侧
+        Launch[执行发起<br/>选择 Agent 类型 + 复制命令]
+        Pass[Agent 通行证<br/>认证凭证]
+        Track[状态与产出追踪]
+    end
+
+    subgraph Agent侧
+        Agent[本地 Agent<br/>Claude Code / Codex]
+        Run[认领并执行任务]
+        Submit[提交任务产出]
+    end
+
+    Owner -->|选择 Agent 发起执行| Launch
+    Agent -->|MCP 连接 + 通行证| Pass
+    Launch --> Run
+    Run --> Submit
+    Submit --> Track
+    Track -->|通知待审核| Owner
+    Owner -->|通过 / 驳回| Track`
+
+    const tag = document.createElement('script')
+    tag.src = CDN
+    tag.onload = async () => {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'strict',
+        fontFamily: 'inherit',
+      })
+      const id = 'banner-flowchart'
+      const { svg } = await mermaid.render(id, CODE)
+      document.getElementById('diagram').innerHTML = svg
+      // signal completion for headless screenshot
+      document.title = 'dsh-mermaid-preview banner [ready]'
+    }
+    tag.onerror = () => { document.body.innerHTML = 'CDN failed' }
+    document.head.append(tag)
+  </script>
+</body>
+</html>

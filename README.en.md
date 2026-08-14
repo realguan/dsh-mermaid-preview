@@ -1,5 +1,9 @@
 # dsh-mermaid-preview
 
+<p align="center">
+  <img src="assets/banner.png" alt="dsh-mermaid-preview banner" width="100%" />
+</p>
+
 A Cordis client plugin that renders Markdown `mermaid` fenced code blocks as
 diagrams inside the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 (dsh) web UI.
