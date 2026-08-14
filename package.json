@@ -6,8 +6,9 @@
   "main": "src/client.js",
   "exports": {
     ".": "./src/client.js",
-    "./client": "./src/client.js",
-    "./dynamic": "./dist/dsh-mermaid-preview.client.js"
+    "./client": "./dist/dsh-mermaid-preview.bundle.js",
+    "./dynamic": "./dist/dsh-mermaid-preview.client.js",
+    "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
@@ -32,8 +33,8 @@
     "README.en.md"
   ],
   "scripts": {
-    "build": "node scripts/build-dynamic.mjs",
-    "check": "node --check src/client.js && node --check dist/dsh-mermaid-preview.client.js && node scripts/build-dynamic.mjs --verify",
+    "build": "node scripts/build-dynamic.mjs && node scripts/build-client-bundle.mjs",
+    "check": "node --check src/client.js && node scripts/build-dynamic.mjs --verify && node scripts/build-client-bundle.mjs --verify",
     "demo": "node scripts/serve-demo.mjs"
   },
   "keywords": [
