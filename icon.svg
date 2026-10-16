@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Mermaid Preview">
+  <g fill="none" stroke="#247bbf" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="8" width="22" height="14" rx="4" fill="#e8f1fa" />
+    <rect x="36" y="26" width="22" height="14" rx="4" fill="#e8f1fa" />
+    <rect x="6" y="44" width="22" height="14" rx="4" fill="#e8f1fa" />
+    <path d="M28 15h6a6 6 0 0 1 6 6v5" />
+    <path d="M36 33h-6a6 6 0 0 0-6 6v5" />
+  </g>
+  <g fill="#247bbf">
+    <circle cx="17" cy="15" r="2.4" />
+    <circle cx="47" cy="33" r="2.4" />
+    <circle cx="17" cy="51" r="2.4" />
+  </g>
+</svg>

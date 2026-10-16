@@ -1,40 +1,46 @@
 {
   "name": "dsh-mermaid-preview",
-  "version": "0.2.1",
-  "description": "Render Mermaid fenced code blocks as diagrams in DeepSeek Harness (dsh) web — chat, trajectory, plan review and every other Markdown surface.",
+  "version": "0.3.0",
+  "description": "Render Mermaid fenced code blocks as diagrams in every DeepSeek Harness (dsh) Web Markdown surface.",
   "type": "module",
-  "main": "src/client.js",
+  "main": "index.js",
   "exports": {
-    ".": "./src/client.js",
-    "./client": "./dist/dsh-mermaid-preview.bundle.js",
-    "./dynamic": "./dist/dsh-mermaid-preview.client.js",
-    "./package.json": "./package.json"
+    ".": "./index.js",
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.yml"
+      "patch": "./cordis.patch.yml"
     },
     "client": {
+      "platform": "web",
+      "immediately": true,
       "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ],
-      "platform": "web"
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
     }
   },
+  "icon": "./icon.svg",
   "files": [
+    "index.js",
     "src",
     "dist",
-    "cordis.yml",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
     "demo",
     "examples",
     "docs",
     "LICENSE",
     "README.md",
-    "README.en.md"
+    "README.en.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "node scripts/build-dynamic.mjs && node scripts/build-client-bundle.mjs",
-    "check": "node --check src/client.js && node scripts/build-dynamic.mjs --verify && node scripts/build-client-bundle.mjs --verify",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
     "demo": "node scripts/serve-demo.mjs"
   },
   "keywords": [

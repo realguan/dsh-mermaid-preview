@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mermaid 图表预览",
+    "description": "把 Markdown 的 mermaid 围栏代码块渲染为图表，覆盖所有 Markdown 视图。"
+  }
+}

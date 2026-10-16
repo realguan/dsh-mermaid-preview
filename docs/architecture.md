@@ -1,114 +1,158 @@
 # 实现原理
 
-`dsh-mermaid-preview` 是一个**纯客户端、免构建**的 Cordis 动态插件：不改动
-dsh Web 壳层（shell）的任何源码，只靠浏览器 DOM 观察与标准全局 API 工作。
+本文说明 dsh-mermaid-preview 为什么这样写、依赖 dsh 的哪些稳定契约、以及已知边界。
 
-## 为什么需要 DOM 扫描，而不是改 Markdown 渲染器
+---
 
-dsh Web 的 Markdown 渲染（`packages/client/ui-primitives` 中的
-`MarkdownText`）是一条「mdast → React」的直接管线，`mermaid` 不在其
-shiki 语法白名单里，因此：
+## 1. 插件形态
 
-- mermaid 围栏被渲染为**纯文本代码块**（无高亮，但结构稳定）；
-- 渲染器本身没有对第三方开放「代码块渲染器」扩展点；
-- 动态插件也无法 hook 该 React 组件。
+一个 dsh 插件包可以同时有 **Host 半侧** 和 **Client 半侧**：
 
-于是插件选择了对**渲染结果**做观察与替换：只要 DOM 里出现满足条件的
-代码块，就把它变成图表。好处是不依赖任何 dsh 内部 API，天然覆盖对话、
-轨迹、计划评审等所有使用 `MarkdownText` 的视图；代价是依赖渲染器的
-DOM 输出结构（见下），dsh 升级若改变该结构需要同步适配。
-
-## 挂载点：`.md-code-block` 的稳定结构
-
-`CodeBlock` 组件（`ui-primitives/src/markdown/CodeBlock.tsx`）对未知语言
-围栏输出：
-
-```html
-<div class="md-code-block …">            <!-- 根包装，类名固定 -->
-  <div class="…bannerWrap">
-    <div class="…banner">
-      <div class="…infostring">mermaid</div>   <!-- 围栏语言标签 -->
-      <div class="…action"><button>复制</button></div>
-    </div>
-  </div>
-  <pre class="…plain"><code>…源码…</code></pre>  <!-- 纯文本兜底 -->
-</div>
-```
-
-插件据此识别：
-
-1. 找到 `.md-code-block`；
-2. 读取横幅第一个子 div 的文本（`blockLang`），小写比对 `mermaid`；
-3. 命中后取出 `<pre>` 的 `textContent` 作为 Mermaid 源码。
-
-> 已知语言（ts/bash/json 等）由 shiki 渲染成 `<div dangerouslySetInnerHTML>`，
-> 没有 `<pre>` 兜底，也不会命中 `mermaid` 标签，天然互不干扰。
-
-## 渲染管线
-
-```
-MutationObserver(document.body)
-  └─ 新增节点 / 文本变化
-      └─ 命中 .md-code-block[infostring=mermaid] 且未处理
-          └─ loadMermaid(): <script src=jsDelivr mermaid@11.16.1>（去重，仅一次）
-              └─ mermaid.initialize({ theme: 跟随 dsh 主题, securityLevel: 'strict' })
-                  └─ mermaid.render(唯一id, 源码)
-                      └─ <pre> → .dsh-mermaid 容器（SVG + 隐藏源码 + 切换按钮）
-```
-
-关键细节：
-
-- **流式→结束**：流式期间渲染器不传语言标签（`streaming` 分支
-  `lang = undefined`），横幅为空；消息结束后 React 原地更新横幅文本，
-  属于 `characterData` 变化——观察器监听字符级变化正是为了捕获这一瞬间。
-- **去重与防回环**：每个代码块设置 `data-dsh-mermaid` / `data-dsh-busy`
-  标记；观察器跳过 `[data-dsh-mermaid]` 子树内的一切变化，避免「渲染 →
-  触发观察 → 再渲染」的无限循环。
-- **React 重建**：消息视图切换、列表重渲染会重建代码块 DOM，观察器
-  会重新捕获并渲染，无需额外状态。
-- **渲染 id 唯一**：`mermaid.render` 要求 id 全文档唯一，使用
-  `dsh-mermaid-<时间戳36进制>-<自增>`。
-- **主题跟随**：读 `theme.getTheme().active.colorScheme` 决定 mermaid 的
-  `dark` / `default` 主题，监听 `theme/change` 事件重绘可见图表。
-- **失败兜底**：CDN 加载失败或语法错误时，保留原始代码块并显示一行
-  红色错误提示；加载失败不重试，避免反复请求。
-
-## 生命周期
-
-所有副作用都挂在插件 fiber 上：
-
-- 样式：在 `ctx.effect` 里创建 `<style>` 元素注入 CSS，并返回 `() => style.remove()`
-  作为清理函数 —— 浏览器端客户端运行时不提供 `styles` 服务，故不依赖它；
-  停止/更新插件时自动移除注入的样式；
-- 观察器：`ctx.effect(() => { observer.observe(…); return () => observer.disconnect() })`；
-- 主题监听：`ctx.on('theme/change', …)` —— Cordis 事件绑定随 fiber 释放。
-
-## 安全
-
-- Mermaid 以 `securityLevel: 'strict'` 初始化：HTML 标签渲染、点击跳转等
-  高风险能力被禁用，仅输出受控 SVG。
-- 插件不读取、不透传任何会话数据；只处理页面里**已渲染**的 mermaid 代码块
-  文本，且不向任何服务器上报。
-- CDN 脚本与 dsh 页面同源策略一致（无 CSP 限制的部署下可用）。
-
-## 局限与已知边界
-
-| 边界 | 说明 |
+| 文件 | 角色 |
 | --- | --- |
-| 依赖网络 | Mermaid 库按需从 jsDelivr 加载；离线部署需改 CDN 常量或自托管 |
-| 不参与流式 | 只在消息结束后渲染（避免抖动与重复重绘） |
-| 只认 `mermaid` 标签 | `mmd` 等别名不会触发；如需支持可在 `blockLang` 处扩展 |
-| DOM 结构耦合 | 依赖 `.md-code-block` / 横幅结构；dsh 升级若改动需同步适配 |
-| 主题事件名 | 依赖 `theme/change` 事件；版本差异需按上文 FAQ 调整 |
-| 已渲染 SVG 不回收 | 停止插件不会移除已渲染的 SVG（它们是内容，不是副作用） |
+| `index.js` | Host 半侧。本插件不注册任何 Host 能力，`apply()` 为空；它的存在只是让 bundle 有一个可挂载的 Loader 行。 |
+| `cordis.patch.yml` | bundle 层：`dsh.bundle.patch` 指向它，profile 组合时插入 `mermaid-preview` 行。 |
+| `src/client.js` | Client 半侧源码（唯一逻辑所在）。 |
+| `dist/client.js` | 构建产物，`exports["./client"]` 指向它。 |
+| `dist/dsh-mermaid-preview.client.js` | 构建产物，动态插件（`cordis_define` 的 `code.client`）载荷。 |
+| `locale/*.json` | 插件在「设置 → 插件」里的展示标题/描述。 |
+| `icon.svg` | 展示图标（`package.json` 顶层 `icon`）。 |
 
-## 目录速览
+`dsh.client` 声明告诉 `@deepseek-ai/dsh-client-modules`：这个包有浏览器半侧，
+平台是 `web`，`exports["./client"]` 就是它的入口。宿主侧据此把文件挂在
+`/plugins/dsh-mermaid-preview/client.js`，页面用
+`window.__ModuleLoader__.load({ id, factory })` 执行它，并把 factory 的返回值
+当作 Cordis 插件挂载。
+
+> **模块身份 = 包名。** `dist/client.js` 里的 `id` 必须等于 `package.json` 的
+> `name`，否则页面报 `no registered factory`。
+
+---
+
+## 2. Markdown 围栏的 DOM 契约
+
+`@deepseek-ai/dsh-client-ui-primitives` 的 `CodeBlock` 渲染出：
 
 ```
-src/client.js       插件唯一源码（ES module 形式，export default）
-scripts/build-dynamic.mjs   从 src 生成 dist 粘贴载荷
-dist/               生成的动态插件载荷（提交到仓库，开箱即用）
-demo/               零依赖独立演示页（无需 dsh）
-examples/           图型示例合集
-docs/               安装与原理文档
+.md-code-block                       ← 根，React 拥有
+├── div(bannerWrap)                  ← React 拥有
+│   └── [data-code-block-banner]     ← CodeToolbar（markdown 走这条分支）
+│       ├── div.heading > span.language   ← 支持高亮时显示语言名，否则显示通用「代码」
+│       └── div.actions > button          ← 复制按钮
+└── div[data-code-block-content]     ← React 拥有
+    └── <pre class="…plain…">        ← 未高亮：纯文本
+        或 <div>（shiki 输出）        ← 已高亮
 ```
+
+两个关键事实决定了实现方式：
+
+1. **语言信息不在 DOM 里。** markdown 渲染把 `toolbarLabels` 传给 `CodeBlock`，
+   于是走 `CodeToolbar` 分支；对 shiki 语法表不认识的 `mermaid`，`span.language`
+   显示的是通用文案「代码 / Code」，而不是 info string。因此**不能靠语言标签识别
+   mermaid 围栏**（这是 0.2 之前老做法失效的根本原因）。
+2. **未高亮的围栏一定长成 `<pre>`。** 已高亮的围栏把 shiki 结果塞进一个 `<div>`。
+   于是「`[data-code-block-content]` 的第一个子元素是 `<pre>`」就是一个廉价而稳定
+   的「这是一个未高亮围栏」判据。
+
+### 识别策略
+
+```
+候选 = [data-code-block-content] > pre 的 .md-code-block
+命中 = 语言标签是 mermaid（老布局 / 演示页）
+     或 围栏首条语句是 mermaid 语句（flowchart / sequenceDiagram / …）
+```
+
+`opensDiagram()` 会先剥掉 mermaid 允许出现在首语句之前的内容：
+BOM、`%%` 行注释、`%%{ … }%%` 指令、`---` front matter。
+
+误判边界：一个非 mermaid 语言的围栏，如果首行恰好是 `graph TD`，会被渲染。
+这是内容判定的固有代价，已在 README 的 FAQ 中说明。
+
+---
+
+## 3. 为什么不替换 React 的节点
+
+老版本把 `<pre>` `replaceWith` 成自己的容器。React 拥有那棵子树：主题切换或消息
+重渲染时 React 会按自己的 fiber 更新/重建子节点，被替换掉的 `<pre>` 会让 React
+的内部引用指向游离节点，出现「图表闪烁 / 消失」。
+
+现在的做法：
+
+- 容器 `.dsh-mermaid` 追加为 `.md-code-block` 的**最后一个子节点**。
+  React 的子节点是 `[bannerWrap, content]`，多出来的第 3 个节点不在它的协调范围内，
+  它不会去删除。
+- 需要显示图表时，只给 `[data-code-block-content]` 打一个
+  `data-dsh-mermaid-hidden` 属性，由插件样式表把它隐藏——**不动 React 的任何节点**。
+- 切到源码 = 摘掉这个属性；内置复制按钮仍然从原来的 `<pre>` 读取文本，行为不变。
+- 如果 React 因为结构性变化丢掉了容器，`MutationObserver` 会发现并重建它
+  （`ensureRecord()` 检测 `holder.isConnected`）。
+
+---
+
+## 4. 渲染管线
+
+```
+MutationObserver（childList + subtree + characterData）
+      │  任何新增 / 文本变化
+      ▼
+schedule(block)  250ms 静默去抖     ← 流式输出期间不会反复渲染
+      ▼
+renderBlock → sourceOf → isMermaidFence
+      ▼
+enqueue(...)     串行队列             ← 一屏多图不会并发挤爆主线程
+      ▼
+paint: loadMermaid → configure → mermaid.render
+      ▼
+注入 SVG + applyView
+```
+
+- **Mermaid 按需加载**：只有真的出现候选围栏才去取 UMD（`window.mermaid` 已存在则
+  直接复用）。加载失败会清掉缓存，允许后续围栏重试。
+- **失败兜底**：语法错误或加载失败时移除容器、恢复原始代码块，并在其下方给出一条
+  红色说明（`--dsw-alias-state-error-primary`）。同时给块打 `data-dsh-mermaid="failed"`，
+  避免同一块反复重试。
+- **安全**：`securityLevel: 'strict'`（禁用 HTML 标签与脚本），
+  `suppressErrorRendering: true`（mermaid 自己不会往页面里塞错误图）。
+
+---
+
+## 5. 生命周期与清理
+
+所有副作用都注册在插件 fiber 上：
+
+| 副作用 | 归属 |
+| --- | --- |
+| 样式表 `<style data-dsh-mermaid-styles>` | `ctx.effect` |
+| MutationObserver | `ctx.effect` |
+| 去抖定时器 | `ctx.effect` 的清理函数逐个 `clearTimeout` |
+| `<script>`（mermaid UMD） | `ctx.effect` 的清理函数移除 |
+| 注入的 DOM、`data-dsh-mermaid*` 属性 | 清理函数逐个摘除 |
+| `theme/change`、`locale/change` 监听 | `ctx.on` |
+| locale 字典 | `ctx.effect(() => locale.register(...))` |
+
+停用插件、HMR 重载或 profile 移除该 bundle 后，页面回到「未安装」的样子。
+
+---
+
+## 6. 主题与语言
+
+- 主题：`ctx.get('theme').getTheme().active.colorScheme` → mermaid `dark` / `default`；
+  取不到时退回 `prefers-color-scheme`。`theme/change` 触发全部重绘。
+- 语言：`ctx.get('locale')` 可用时注册命名空间 `dsh-mermaid-preview` 并
+  `bind()` 取文案，`locale/change` 时刷新按钮文字；服务不可用时使用内置 `en` 文案。
+- 配色只用 `cordis_inspect_query` 的 `Theme` 列出的 token：
+  `--dsw-alias-bg-layer-1`、`--dsw-alias-border-l1`、`--dsw-alias-border-l2`、
+  `--dsw-alias-label-primary`、`--dsw-alias-label-secondary`、
+  `--dsw-alias-state-error-primary`。token 改名只会影响观感，不会打断渲染。
+
+---
+
+## 7. 已知边界
+
+- **CDN 依赖**：mermaid UMD 默认从 jsDelivr 取（`src/client.js` 顶部的
+  `MERMAID_CDN`，当前固定 `11.17.2`）。离线环境或镜像不可达时，围栏保持原样并给出
+  加载失败提示。换镜像 = 改一行常量后 `npm run build`。
+- **流式输出不渲染**：设计如此，静默 250ms 后才渲染，避免半截语法反复报错。
+- **内容判定**：见 §2 的误判边界。
+- **mermaid 12 未验证**：本插件只按 11.x 的 `initialize` / `render` 契约编写与
+  验证；升级大版本前请按 `docs/install.md` 的验证步骤自查。

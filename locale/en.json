@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mermaid Preview",
+    "description": "Render Mermaid fenced code blocks as diagrams in every Markdown surface."
+  }
+}

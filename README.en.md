@@ -4,9 +4,9 @@
   <img src="assets/banner.png" alt="dsh-mermaid-preview banner" width="100%" />
 </p>
 
-A Cordis client plugin that renders Markdown `mermaid` fenced code blocks as
-diagrams inside the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-(dsh) web UI.
+A Cordis plugin that renders Markdown `mermaid` fenced code blocks as diagrams
+inside the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+(dsh) Web UI.
 
 Chat, trajectory, plan review, compaction summaries — every surface rendered by
 `MarkdownText` gets Mermaid support from one hook.
@@ -15,83 +15,74 @@ Chat, trajectory, plan review, compaction summaries — every surface rendered b
 
 ## Install
 
-### Option 1: dsh native command (recommended)
+> **⚠️ Installation changed in 0.3.0.** `dsh plugin --profile web add <pkg>` is a
+> pnpm passthrough: it installs the dependency but does **not** register a bundle
+> layer. A package that is installed but missing from `dsh.profile.bundles` never
+> activates — that is exactly why older releases looked "installed but dead".
+> See [docs/install.md](./docs/install.md).
+
+### Option 1 — let the agent install it (recommended)
+
+In a dsh session, have the model call `plugin_manager`:
+
+```
+action: install_bundle
+target: <absolute path to this package>   # or github:realguan/dsh-mermaid-preview
+```
+
+That installs, registers the bundle, and activates through HMR in one step.
+
+### Option 2 — manual
 
 ```bash
 dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 ```
 
-One command: clone from GitHub + pnpm install + auto-register as a web profile
-bundle layer + restart `dsh web` to activate.
+Then **register the bundle**: add `"dsh-mermaid-preview"` to
+`dsh.profile.bundles` in `~/.dsh/profiles/web/package.json` and run
+`pnpm install`, or add it to the profile's user patch layer
+(`~/.dsh/profiles/web/cordis.patch.yml`):
 
-> If your dsh version does not support `dsh plugin`, upgrade first:
-> `npm i -g @deepseek-ai/dsh`
-
-### Option 2: Local path install
-
-```bash
-git clone https://github.com/realguan/dsh-mermaid-preview.git
-cd dsh-mermaid-preview && npm run build
-dsh plugin --profile web add .
+```yaml
+- insert:
+    - id: mermaid-preview
+      name: dsh-mermaid-preview
 ```
 
-### Option 3: Dynamic plugin (no install, define in-session)
+### Option 3 — dynamic plugin (no install)
 
-If you prefer not to modify the profile, ask your dsh agent to run
-`cordis_define`, paste the contents of `dist/dsh-mermaid-preview.client.js`
-as `code.client`, then run `cordis_run` and approve. See
-[docs/install.md](./docs/install.md) for details.
+Hand the contents of `dist/dsh-mermaid-preview.client.js` to `cordis_define` as
+`code.client`, then `cordis_run` and allow it. Details in
+[docs/install.md](./docs/install.md).
 
-> #### 🧩 The two build artifacts (`npm run build` produces both)
->
-> Two client artifacts, with different mechanisms:
->
-> | Artifact | Use | Format | Load path |
-> | --- | --- | --- | --- |
-> | `dist/dsh-mermaid-preview.client.js` | dynamic plugin (`cordis_define`) | function body `return {...}` | in-session dynamic runner |
-> | `dist/dsh-mermaid-preview.bundle.js` | native bundle (`dsh plugin add`) | `__ModuleLoader__.load({id, factory})` | web profile `client-modules` |
->
-> `dsh plugin add` depends on the **bundle artifact**: the package's `exports`
-> must expose `./package.json` and point `./client` at the bundle. After editing
-> `src/client.js` always run `npm run build` and reinstall, or the native path
-> won't pick up the new markup logic.
-
-### Uninstall
-
-Edit `~/.dsh/profiles/web/package.json` and remove the `"dsh-mermaid-preview"`
-line from `dependencies`, then:
+### Verify the install
 
 ```bash
-cd ~/.dsh/profiles/web && pnpm install
+dsh --profile web --dump-config | grep -A2 mermaid-preview
 ```
 
-Restart `dsh web` to take effect. Injected styles and observers are removed
-with the profile layer; already-rendered SVGs persist as content and disappear
-on page reload.
-
-### Update
-
-Re-run the install command (pnpm will fetch the latest version):
-
-```bash
-dsh plugin --profile web add dsh-mermaid-preview
-```
+Then send a message containing a ```mermaid fence and confirm you get a diagram.
+Full checklist: [docs/install.md](./docs/install.md).
 
 ## Features
 
-- 🖼️ **No shell changes** — takes over `mermaid` fences via DOM observation;
-  zero modification to dsh source
-- ⚡ **One-command install** — `dsh plugin add` handles registration and deps
-- 🌗 **Theme-aware** — follows the dsh light/dark theme and re-renders on switch
-- 📋 **Keeps interactions** — the original copy button still works, plus a
-  diagram/source toggle
-- 🛟 **Graceful fallback** — keeps the code block with an inline note on CDN or
-  syntax failure
-- 🧹 **Clean uninstall** — styles, observer and listeners are removed on stop
-- 🧪 **Standalone demo** — `demo/` is a dependency-free HTML page that works
-  without dsh
+- 🖼️ **No shell changes** — the plugin observes the DOM; dsh sources stay untouched
+- 🧭 **Tracks the current render contract** — detection is "unhighlighted fence +
+  a leading Mermaid statement", not the language label that current dsh no longer
+  prints (see [architecture.md](./docs/architecture.md) §2)
+- 🌗 **Follows the theme** — light/dark aware, repaints on `theme/change`
+- 🌐 **Follows the locale** — button copy goes through the Client locale service
+- 📋 **Keeps the host controls** — no React node is replaced, so the built-in copy
+  button still works; a "show source / show diagram" toggle is added
+- 🛟 **Fails soft** — a CDN or syntax failure keeps the original code block and
+  shows an inline note
+- 🧹 **Clean disposal** — styles, observer, timers, script tag, and injected DOM
+  all belong to the plugin fiber
+- 🧪 **Self-checking** — `npm run check` validates syntax, manifest, artifact
+  freshness, detection cases, and version pins
 - 📚 **Many diagram types** — flowchart / sequenceDiagram / classDiagram /
-  stateDiagram-v2 / gantt / pie / erDiagram / journey / mindmap / gitGraph / timeline
+  stateDiagram-v2 / gantt / pie / erDiagram / journey / mindmap / gitGraph /
+  timeline and more
 
 ## Try the standalone demo (no dsh needed)
 
@@ -99,88 +90,75 @@ dsh plugin --profile web add dsh-mermaid-preview
 npm run demo        # → http://localhost:8090
 ```
 
-Edit Mermaid source on the left (10+ built-in presets), live render on the
-right, theme selectable.
-
-## Examples
-
-[examples/showcase.md](./examples/showcase.md) — paste-ready sources for 11
-diagram types; the same presets live in `demo/demo.js`.
-
 ## How it works (30 seconds)
 
-dsh's Markdown renderer emits a stable `.md-code-block` structure for unknown
-languages (including `mermaid`): a banner with the language label and a plain
-`<pre><code>` body. The plugin observes `document.body` with a
-`MutationObserver`, loads Mermaid 11 on demand via a `<script>` tag
-(jsDelivr CDN), and replaces the `<pre>` with the rendered SVG — keeping the
-banner and copy button intact.
+The dsh Markdown renderer emits `.md-code-block`: a `[data-code-block-banner]`
+header plus a `[data-code-block-content]` body. For a language shiki does not know
+(including `mermaid`) the header shows a generic label and the body is a plain
+`<pre>`.
 
-```mermaid
-flowchart LR
-    A[MarkdownText<br/>renders .md-code-block] -->|MutationObserver finds mermaid fence| B[Load Mermaid 11<br/>jsDelivr CDN]
-    B --> C[Read source from pre]
-    C --> D[mermaid.render<br/>securityLevel strict]
-    D --> E[SVG replaces pre]
-    E --> F[Banner + copy kept<br/>diagram/source toggle]
-```
+The plugin uses a `MutationObserver` to find blocks whose body's first element is
+that `<pre>`, checks whether the fence's first statement opens a Mermaid diagram,
+then lazily loads Mermaid 11 (jsDelivr CDN) and injects the SVG into a
+`.dsh-mermaid` holder appended **after** React's children — hiding the original
+body with an attribute instead of replacing any React-owned node.
 
-Architecture, design trade-offs and known limits:
+Full rationale, DOM contract, disposal strategy, and known limits:
 [docs/architecture.md](./docs/architecture.md).
 
 ## Layout
 
 ```
-cordis.yml             dsh bundle composition (read by dsh plugin add)
-src/client.js          the one plugin source (ES module; apply holds all logic)
-scripts/build-dynamic.mjs       generates the dist dynamic paste payload
-scripts/build-client-bundle.mjs generates the dist native bundle client half
-dist/dsh-mermaid-preview.client.js   dynamic plugin payload (for cordis_define)
-dist/dsh-mermaid-preview.bundle.js   native bundle (loaded by dsh plugin add)
-demo/                  dependency-free standalone demo
-examples/showcase.md   diagram-type examples
-docs/install.md        install / uninstall / update / FAQ
-docs/architecture.md   internals and security notes
+index.js                        Host half (empty apply; gives the bundle a mountable row)
+cordis.patch.yml                Bundle layer (dsh.bundle.patch)
+src/client.js                   The only logic source (ES module, export default)
+scripts/build.mjs               Emits dist/client.js and dist/dsh-mermaid-preview.client.js
+scripts/check.mjs               Syntax / manifest / artifact freshness / detection / version pins
+dist/client.js                  Native bundle (exports["./client"], loaded by client-modules)
+dist/dsh-mermaid-preview.client.js  Dynamic payload for cordis_define
+locale/{en,zh}.json             Plugin display title and description
+icon.svg                        Plugin icon
+demo/                           Dependency-free standalone demo page
+docs/install.md                 Install / uninstall / update / verify / FAQ
+docs/architecture.md            Implementation notes and safety
 ```
 
-## Tech notes
+## Facts
 
 | Item | Value |
 | --- | --- |
-| Platform | dsh web (client) |
-| Plugin form | dsh bundle client plugin (`dsh plugin add`) |
-| Mermaid | 11.16.1 (UMD, jsDelivr CDN, mirror-swappable) |
-| Dependencies | none at runtime; scripts use Node built-ins only |
-| Security | `securityLevel: 'strict'`; no data collection |
+| Platform | dsh Web (Client half) + empty Host half |
+| Plugin form | dsh bundle client plugin (`dsh.bundle.patch` + `dsh.client`) |
+| Mermaid | 11.17.2 (UMD, jsDelivr CDN; swap the constant for a mirror) |
+| Dependencies | None at runtime; scripts use Node built-ins only |
+| Safety | `securityLevel: 'strict'`, `suppressErrorRendering`, no telemetry |
 | License | MIT |
 
 ## FAQ
 
-- **No render at all (fence stays plain)** — first confirm the plugin is in the
-  browser boot manifest `window.__DSH_BOOT__`. If it's missing and
-  `/plugins/dsh-mermaid-preview/client.js` returns 404, you are likely on an old
-  release (≤ 0.2.0, no bundle artifact) or edited source without reinstalling.
-  Upgrade and reinstall, then restart:
-  `dsh plugin --profile web add github:realguan/dsh-mermaid-preview`
-  (details: FAQ in [docs/install.md](./docs/install.md)).
-- **No render, CDN load error** — offline or jsDelivr unreachable. Change the
-  `CDN` constant in `src/client.js`, `npm run build`, then update the plugin.
-- **No render while streaming** — by design; rendering happens after settle.
-- **No re-render on theme switch** — make sure your dsh version fires the
-  `theme/change` event.
+- **Installed but nothing renders**: make sure the package name is in
+  `dsh.profile.bundles` and that `dsh --profile web --dump-config` shows the
+  `mermaid-preview` row.
+- **Console shows `client-modules:` errors**: the message names the package and
+  the broken declaration (missing `./client` export, module-graph cycle, …).
+- **CDN load failure**: offline, or jsDelivr unreachable. Change `MERMAID_CDN` at
+  the top of `src/client.js` and run `npm run build`.
+- **Nothing renders while streaming**: by design; a fence must be quiet for 250 ms.
+- **A non-Mermaid fence became a diagram**: detection is content-based, so a fence
+  whose first line happens to be `graph TD` is claimed. Change that first line.
 
-More in the FAQ section of [docs/install.md](./docs/install.md).
+More in [docs/install.md](./docs/install.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). After changing `src/client.js`, run
-`npm run build` and commit the `dist/` artifact too.
+See [CONTRIBUTING.md](./CONTRIBUTING.md). After editing `src/client.js`, run
+`npm run build` and commit `dist/` (`npm run check` catches a stale build).
 
-## Acknowledgements
+## Credits
 
 - [mermaid](https://github.com/mermaid-js/mermaid) — the diagram engine
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the platform
-- [jsDelivr](https://www.jsdelivr.com/) — CDN distribution
+- [jsDelivr](https://www.jsdelivr.com/) — CDN delivery
 
 ## License
 

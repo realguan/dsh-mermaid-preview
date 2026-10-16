@@ -1,0 +1,14 @@
+# dsh-mermaid-preview — bundle layer.
+#
+# `dsh.bundle.patch` in package.json names this file. The profile composes it
+# after its shipped bundles when `dsh-mermaid-preview` appears in
+# `dsh.profile.bundles` (see README § Install).
+#
+# The row mounts the Host half (index.js) and, because the package declares
+# `dsh.client` with `platform: web`, the same row makes the browser half
+# discoverable: dsh-client-modules serves it at /plugins/dsh-mermaid-preview/client.js
+# and the page loads it as the module `dsh-mermaid-preview`.
+
+- insert:
+    - id: mermaid-preview
+      name: dsh-mermaid-preview

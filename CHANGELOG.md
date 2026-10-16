@@ -5,6 +5,55 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-16
+
+Rebuilt against dsh 0.2.0-rc.2 and the plugin spec shipped with it
+(`cordis-plugin-development` skill). **Install steps changed — read
+[docs/install.md](./docs/install.md).**
+
+### Fixed
+
+- **The plugin was inert on current dsh.** `dsh plugin --profile web add` is a
+  pnpm passthrough: it installs the dependency but never registers a bundle
+  layer, so the row was absent from the composed profile. The docs claimed
+  otherwise; both the docs and the packaging now match reality, and
+  `plugin_manager install_bundle` is the documented path.
+- **Mermaid fences were no longer detectable.** Current dsh renders a fence
+  header through `CodeToolbar`, which prints the *generic* code label for a
+  language shiki does not know — the `mermaid` info string never reaches the DOM.
+  Detection is now content-based (leading Mermaid statement) with the explicit
+  label still honored where a surface prints one.
+- **Diagrams fought React.** The old code replaced the React-owned `<pre>`. It
+  now appends its holder after React's children and hides the original body with
+  an attribute, so re-renders (theme switch, streaming settle) cannot orphan it,
+  and the built-in copy button keeps working.
+- Legacy `dsh.client.inject: ["@deepseek-ai/dsh-client-runtime"]` removed: that
+  package no longer exists and never ordered anything.
+
+### Added
+
+- `index.js` Host half with the spec's named `apply` export (was a client-shaped
+  default export used as the package entry).
+- `locale/en.json` + `locale/zh.json` display metadata, `icon.svg`, and the
+  `exports` entries dsh reads them through.
+- Client locale integration: the source/diagram toggle follows the interface
+  language and refreshes on `locale/change`.
+- `suppressErrorRendering: true` so a parse failure cannot inject mermaid's own
+  error graphic into the page.
+- `npm run check`: syntax, manifest contract, `dist`/`src` freshness, 25
+  detection cases, and one Mermaid pin across plugin/demo/docs.
+
+### Changed
+
+- Client artifact renamed to `dist/client.js` (`exports["./client"]`); the dynamic
+  payload stays at `dist/dsh-mermaid-preview.client.js`. One `scripts/build.mjs`
+  emits both; `cordis.yml` became `cordis.patch.yml`.
+- Render scheduling: 250 ms settle debounce and a serialized render queue, so
+  streaming and multi-diagram messages no longer thrash the main thread.
+- Mermaid pinned to 11.17.2 (was 11.16.1).
+- Every side effect is now fiber-owned and removed on dispose, including timers
+  and the injected `<script>`.
+
 ## [0.2.1] - 2026-08-14
 
 ### Fixed

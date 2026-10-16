@@ -7,7 +7,7 @@
  * the user edits the source directly) and the theme select.
  */
 
-const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.min.js'
+const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js'
 
 const PRESETS = {
   flowchart: `flowchart LR
@@ -210,6 +210,7 @@ async function render() {
       theme: themeEl.value,
       securityLevel: 'strict',
       fontFamily: 'inherit',
+      suppressErrorRendering: true,
     })
     const id = `demo-mermaid-${Date.now().toString(36)}-${++uid}`
     const result = await mermaid.render(id, code)

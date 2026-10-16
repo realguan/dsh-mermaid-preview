@@ -1,187 +1,142 @@
-# 安装指南
+# 安装与验证
 
-本插件支持多种安装方式，按推荐程度排序。
+> **0.3.0 起，安装方式变了。** `dsh plugin --profile web add <pkg>` 只是 pnpm
+> 透传命令，它**只安装依赖、不会把包注册成 bundle 层**。0.2 之前文档里说的
+> 「一条命令自动注册」已经不成立——这正是旧版本装上却不生效的原因。
+> 现在必须把包名写进 profile 的 `dsh.profile.bundles`。
 
 ---
 
-## 方式一：dsh 原生命令安装（推荐）
+## 方式一：让 Agent 安装（推荐）
 
-### 前置条件
+在 dsh 会话里让模型调用 `plugin_manager`：
 
-- dsh CLI ≥ 0.1.0-rc（支持 `dsh plugin` 命令）
-- pnpm（dsh plugin 内部使用）
-- 浏览器可访问 jsDelivr CDN（插件按需加载 Mermaid 库）
+```
+action: install_bundle
+target: /绝对路径/dsh-mermaid-preview     # 或 npm/github 安装源
+```
 
-> **两种客户端产物**：`npm run build` 会同时产出两份代码，加载机制不同——
-> `dist/dsh-mermaid-preview.bundle.js` 是原生 bundle（`dsh plugin add` 用，格式为
-> `__ModuleLoader__.load({id, factory})`），`dist/dsh-mermaid-preview.client.js`
-> 是动态插件载荷（`cordis_define` 用，格式为函数体 `return {...}`）。
-> 原生安装链（web 的 `client-modules`）通过 `package.json` 的 `exports` 发现
-> 客户端插件——它必须暴露 `./package.json`，并把 `./client` 指向 bundle 产物。
-> 改了 `src/client.js` 后请先 `npm run build` 再重装，否则原生路径拿不到新逻辑。
+它会完成 pnpm 安装 + 把包加进当前 profile 的 `dsh.profile.bundles`，并通过 HMR
+立即生效（替换已装包的同名代码需要重启 dsh）。
 
-### 从 GitHub 安装（推荐）
+## 方式二：手动安装到某个 profile
 
 ```bash
+# 1. 取包（本地开发用 link，线上用 github: 或 npm:）
+git clone https://github.com/realguan/dsh-mermaid-preview.git
+cd dsh-mermaid-preview && npm run check     # 可选：本地自检
+
+# 2. 装进 profile 依赖
+dsh plugin --profile web add github:realguan/dsh-mermaid-preview
+
+# 3. 关键一步：注册为 bundle 层
+#    编辑 ~/.dsh/profiles/web/package.json，在 dsh.profile.bundles 数组里追加：
+#      "dsh-mermaid-preview"
+#    然后让配置生效：
+cd ~/.dsh/profiles/web && pnpm install
+```
+
+也可以不改 `package.json`，改用 profile 的用户 patch 层
+（`~/.dsh/profiles/web/cordis.patch.yml`）：
+
+```yaml
+- insert:
+    - id: mermaid-preview
+      name: dsh-mermaid-preview
+```
+
+重启 `dsh web`（或等 HMR）后生效。
+
+### 验证安装是否成功
+
+```bash
+# 1. 组合结果里应该有 mermaid-preview 行
+dsh --profile web --dump-config | grep -A2 mermaid-preview
+
+# 2. 会话里让模型调用 plugin_manager list_bundles，
+#    应看到 dsh-mermaid-preview：enabled=true, installed=true
+
+# 3. 页面侧：随便发一条带 ```mermaid 围栏的消息，应看到图而不是代码块
+```
+
+### 卸载
+
+```bash
+# 让模型调用 plugin_manager：action: remove_bundle, target: dsh-mermaid-preview
+# 或者手动：
+#   1. 从 dsh.profile.bundles 删除 "dsh-mermaid-preview"
+#   2. 从 dependencies 删除同一行
+cd ~/.dsh/profiles/web && pnpm install
+```
+
+### 更新
+
+```bash
+cd dsh-mermaid-preview && git pull && npm run build   # 改了 src 才需要 build
 dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 ```
 
-这条命令做了三件事：
-1. 用 pnpm 从 GitHub 克隆并安装 `dsh-mermaid-preview` 到 web profile
-2. 自动识别包内的 `dsh.bundle.patch` 声明，将插件注册为 profile 的 bundle 层
-3. 重启 `dsh web` 后插件自动激活
+---
 
-### 从本地路径安装（参与开发）
+## 方式三：动态插件（会话内定义，免 profile 修改）
 
-```bash
-git clone https://github.com/realguan/dsh-mermaid-preview.git
-cd dsh-mermaid-preview && npm run build
-dsh plugin --profile web add .
-```
-
-### 卸载
-
-`dsh plugin` 目前只官方支持 `add` 子命令。卸载请手动操作：
-
-```bash
-# 1. 编辑 profile 的 package.json，删除 dsh-mermaid-preview 依赖
-# 文件位置：~/.dsh/profiles/web/package.json
-# 删除 dependencies 里的 "dsh-mermaid-preview": "..." 一行
-
-# 2. 运行 pnpm install 使变更生效
-cd ~/.dsh/profiles/web && pnpm install
-
-# 3. 重启 dsh web
-```
-
-### 更新
-
-重新执行安装命令即可（pnpm 会自动拉取最新版本）：
-
-```bash
-dsh plugin --profile web add dsh-mermaid-preview
-```
+适合临时试用。把 `dist/dsh-mermaid-preview.client.js` 的内容作为
+`code.client` 交给 `cordis_define`，再 `cordis_run` 并允许即可。
+该产物与原生 bundle 同源（`npm run build` 同时生成两者）。
 
 ---
 
-## 方式二：动态插件（会话内定义，免 profile 修改）
+## 验证（本仓库能证明什么）
 
-适用于临时试用或无法使用 `dsh plugin` 命令的场景。
+`npm run check` 覆盖：
 
-### 安装步骤
+1. `src/client.js`、`index.js`、两个 `dist` 产物、脚本全部通过 `node --check`；
+2. manifest 满足 dsh 0.2.x 的客户端插件契约（`exports["./client"]`、
+   `dsh.bundle.patch`、`dsh.client.platform === 'web'`、`exports["./package.json"]`、
+   `./locale/*.json`、图标大小）；
+3. `dist/` 与 `src/` 一致（防止「改了源码忘了 build」这一客户端插件的经典静默故障）；
+4. mermaid 识别启发式的 25 条用例（含 front matter、指令、注释、误判样本）；
+5. 插件、演示页、文档里的 mermaid 版本号一致。
 
-1. 打开任意 dsh 会话，让模型执行：
+它**不**能证明浏览器里的观感。视觉验证需要在装有插件的 dsh Web 页面上，
+用一条带 `mermaid` 围栏的消息确认：
 
-   ```
-   cordis_define
-   ```
-
-2. 在 `code.client` 参数中粘贴 **`dist/dsh-mermaid-preview.client.js`** 的完整内容。
-
-   参数建议：
-
-   | 参数 | 值 |
-   | --- | --- |
-   | `plugin.kind` | `new`，`idPrefix` 填 `merm` |
-   | `name` | `Mermaid 渲染` |
-   | `purpose` | 一句话说明：把 mermaid 围栏渲染为图表 |
-   | `code.client` | `dist/dsh-mermaid-preview.client.js` 全文 |
-
-3. 执行：
-
-   ```
-   cordis_run <返回的 pluginId> <返回的 packageId>
-   ```
-
-4. 在 Run 卡片上点击 **允许（Allow）**，等待激活完成。
-
-5. 验证：发送一条包含 ````` ```mermaid ```` 围栏的消息，代码块应被渲染成图表。
-
-### 卸载
-
-```
-cordis_stop <pluginId>   # 停用（保留定义，可随时再启动）
-cordis_undefine <pluginId>  # 彻底删除
-```
-
-### 更新
-
-修改 `src/client.js` 后运行 `npm run build` 重新生成载荷，然后：
-
-```
-cordis_define   # plugin.kind = existing，pluginId 不变，粘贴新载荷
-cordis_run <pluginId> <新packageId>  # mode = update
-```
-
----
-
-## 方式三：自建 dsh 分支静态挂载
-
-适用于你维护自己的 dsh 部署（fork deepseek-harness）的场景。本仓库已经包含
-`dsh.bundle.patch` 和 `dsh.client.inject` 声明，兼容 dsh 的 bundle 插件体系。
-
-概括步骤（具体路径以你的分支版本为准）：
-
-1. 将本仓库作为 workspace 包加入（`pnpm-workspace.yaml` 增加一行，例如
-   `plugins/*`）。
-2. 确保 `src/client.js` 的 TypeScript 等价版本通过构建（或直接用 JS）。
-3. 本仓库的 `cordis.yml` 已经声明了 `insert` 行，会自动注册客户端插件。
-4. 重新构建 Web 产物并部署。
-
-> 注意：dsh 的客户端插件运行时（`cordis-client-runner`）对**动态**包开放
-> DOM 全局（`document`/`window`）；静态 bundle 插件同样可用，但请以你 fork 的
-> `packages/extensions/cordis-client-runner` 源码为准。
+- 出现图而不是代码块；
+- 「显示源码 / 显示图表」切换正常，代码块自带的复制按钮仍能复制源码；
+- 明暗主题切换后图跟着重绘；
+- 语法错误的围栏保留代码块并显示红色提示；
+- 停用插件后页面恢复原样（无残留样式与节点）。
 
 ---
 
 ## 常见问题
 
-### 原生安装后完全不渲染（围栏只是普通代码块）？
+**装上了但完全不渲染（围栏还是普通代码块）**
 
-先确认 `dsh-mermaid-preview` 是否真的进了浏览器启动清单：
+1. 确认包名在 `dsh.profile.bundles` 里，且 `dsh --profile web --dump-config`
+   能看到 `mermaid-preview` 行。只装了依赖、没注册 bundle 是本插件最常见的失败原因。
+2. 打开页面控制台，看有没有 `client-modules:` 开头的报错——它会明确说出
+   是哪个包的哪个声明有问题（缺 `./client` 导出、模块图成环等）。
+3. 确认页面 boot 清单里有这一行：控制台执行
+   `window.__DSH_BOOT__.entries.map(e => e.id)`。
 
-```
-# 打开 dsh web 页面，按 F12 在 console 里执行：
-JSON.stringify(window.__DSH_BOOT__).includes('dsh-mermaid-preview')
-```
+**不渲染且报 CDN 加载失败**
 
-返回 `false`、且 `http://127.0.0.1:3080/plugins/dsh-mermaid-preview/client.js`
-返回 404，说明插件客户端没被加载。常见原因与对策：
+离线或 jsDelivr 不可达。改 `src/client.js` 顶部的 `MERMAID_CDN`（可换成内网镜像），
+`npm run build` 后重新安装。
 
-- **装的是旧版本**（≤ 0.2.0，`exports` 没暴露 `./package.json` 或 `./client` 指向
-  原始 ESM）。原生命令的加载链（web 的 `client-modules`）通过 `require.resolve(
-  <pkg>/package.json)` 发现插件并读取 `exports`。旧包会因为 `./package.json` 不在
-  `exports` 里而解析失败，被永久判定为「非客户端插件」——**重启也无法修复**，
-  必须重装到新版本：
-  ```bash
-  dsh plugin --profile web add github:realguan/dsh-mermaid-preview
-  # 然后重启 dsh web
-  ```
-- **改过源码没重装 bundle**：改了 `src/client.js` 后要先 `npm run build` 再重装，
-  否则原生路径读到的还是旧 bundle。
-- 检查后仍异常：在 profile 目录 `~/.dsh/profiles/web` 下确认 package.json 的
-  `dependencies` 里有 `dsh-mermaid-preview`、且 `dsh.profile.bundles` 里也有它。
+**流式输出过程中不渲染**
 
-### 图表没有渲染，代码块下方出现红色提示
+设计如此：围栏静默 250ms 后才渲染，避免半截语法反复报错。
 
-- `Mermaid 加载失败：mermaid CDN script failed to load` —— 浏览器访问
-  jsDelivr 失败（离线 / 被墙 / 代理）。可改用其他镜像：
-  修改 `src/client.js` 顶部的 `CDN` 常量（例如 `unpkg.com` 或自建镜像），
-  重新 `npm run build` 并更新插件。
-- `Mermaid 渲染失败：…` —— Mermaid 语法错误。对照
-  `examples/showcase.md` 的写法检查，或在 `demo/` 里先验证语法。
+**某个 `text` 围栏被错误地渲染成了图**
 
-### 流式输出过程中不渲染？
+识别是内容驱动的（见 [architecture.md](./architecture.md) §2）：首行恰好是
+`graph TD` / `flowchart LR` 之类的非 mermaid 围栏会被接管。给围栏换一个语言标签
+（例如 `text` 改成 `plaintext`）不影响结果，因为判定看内容；把首行注释掉或改成
+非 mermaid 语句即可避免。
 
-设计如此：流式期间 Markdown 渲染器不携带语言标签，只有消息**结束**后
-插件才会接管渲染，避免对流式内容反复重绘。
+**主题切换后图没重绘**
 
-### 图表不跟随主题切换？
-
-插件监听 `theme/change` 事件自动重绘。若你的 dsh 版本事件名不同，请
-调整 `src/client.js` 中 `ctx.on('theme/change', reflowTheme)` 一行。
-
-### 为什么图表下方还有一个「显示源码」按钮？
-
-点击可切换 图表 / 源码视图；源码视图保留了原代码块的全部文本，
-复制按钮（横幅上）仍然可用。
+确认 dsh 版本仍发出 `theme/change` 事件（`cordis_inspect_query` 的 client `Event`
+目录里能看到）。若事件改名，插件需要同步更新。

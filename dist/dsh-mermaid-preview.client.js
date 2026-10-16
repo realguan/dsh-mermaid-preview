@@ -1,79 +1,176 @@
 /**
- * dsh-mermaid-preview — dynamic Cordis client plugin
+ * dsh-mermaid-preview — Client (browser) half.
  *
- * Renders Mermaid fenced code blocks as diagrams in every Markdown surface of
- * DeepSeek Harness (dsh) web: chat messages, the trajectory view, plan review,
- * compaction summaries — anywhere the built-in `MarkdownText` renderer draws a
- * fence with the info string `mermaid`.
+ * Renders `mermaid` fenced code blocks as diagrams in every DeepSeek Harness
+ * (dsh) Web Markdown surface: chat messages, the trajectory view, plan review,
+ * compaction summaries — anywhere the shared `MarkdownText` renderer draws a
+ * fence.
  *
- * How it works (see docs/architecture.md for the full story):
+ * ## How it works
  *
- *   1. The dsh Markdown renderer emits a stable DOM shape for fences whose
- *      language is unknown to its shiki grammar allowlist: a
- *      `.md-code-block` wrapper with a banner showing the language label and a
- *      copy button, followed by a plain `<pre><code>` body.
- *   2. A `MutationObserver` on `document.body` (childList + subtree +
- *      characterData) watches for such blocks — including the
- *      streaming→settled transition, when the language label finally lands.
- *   3. Mermaid 11 (UMD) is loaded once from jsDelivr via a `<script>` tag.
- *      The browser half of a dynamic package may touch DOM globals; only
- *      timers / fetch / require are shadowed by the runner.
- *   4. The `<pre>` body is replaced by the rendered SVG inside a `.dsh-mermaid`
- *      holder. The original banner (language label + copy button) survives, so
- *      copying the Mermaid source keeps working.
- *   5. The dsh theme is followed (`theme.getTheme().active.colorScheme`) and
- *      visible diagrams re-render when the `theme/change` event fires.
- *   6. Every side effect (styles, observer, theme listener) is fiber-owned:
- *      stopping or updating the plugin removes all of it.
+ * 1. `MarkdownText` renders a fence as a `.md-code-block` root holding a
+ *    `[data-code-block-banner]` header and a `[data-code-block-content]` body.
+ *    A language the shiki grammar table does not know (which includes
+ *    `mermaid`) renders **plain**: the body's first child is a `<pre>`. A
+ *    highlighted language renders shiki output inside a `<div>` instead, so
+ *    "the body's first child is a `<pre>`" is the plugin's cheap, stable
+ *    "unhighlighted fence" test.
+ * 2. The header is a `CodeToolbar`, which prints the *generic* code label for an
+ *    unsupported language — the info string `mermaid` is therefore **not** in
+ *    the DOM on current dsh. Detection is content-based: the first Mermaid
+ *    statement of the fence (`flowchart`, `sequenceDiagram`, …) decides. A
+ *    surface that does print the info string (older layouts, the demo page) is
+ *    still honored directly.
+ * 3. The plugin appends its own holder as the block's **trailing** child and
+ *    leaves every React-owned node in place; switching to source merely lifts a
+ *    CSS rule. React therefore never reconciles a node it did not create, and
+ *    the built-in copy button keeps reading the original `<pre>`.
+ * 4. Mermaid 11 (UMD, jsDelivr) is fetched once, lazily, only when the first
+ *    candidate fence appears. Renders are serialized so a message full of
+ *    diagrams cannot block the main thread with parallel work.
+ * 5. Theme switches repaint through `ctx.on('theme/change')`; UI copy comes from
+ *    the Client locale service (`ctx.get('locale')`), so it follows the
+ *    interface language.
+ * 6. Every side effect — styles, observer, listeners, timers, script tag,
+ *    injected DOM — is owned by the plugin fiber and removed on stop/update.
  *
- * This module is the canonical source. `scripts/build-dynamic.mjs` derives the
- * paste-ready dynamic payload (`dist/dsh-mermaid-preview.client.js`) from it —
- * the exact text you hand to `cordis_define` as `code.client`.
+ * This module is the canonical source. `scripts/build.mjs` derives
+ * `dist/client.js` (the native bundle a profile loads) and
+ * `dist/dsh-mermaid-preview.client.js` (the paste-ready dynamic payload).
  *
  * MIT License — see LICENSE.
  */
 
-return {
+/** Package name. It is the browser module identity, so it must equal `name`. */
+const PLUGIN_ID = 'dsh-mermaid-preview'
+
+/** Locale namespace for this plugin's own interface copy. */
+const NS = PLUGIN_ID
+
+/** Fence language this plugin takes over. */
+const LANGUAGE = 'mermaid'
+
+/** Pinned Mermaid release (UMD). Change this line to use a mirror. */
+const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js'
+
+/** Quiet period before a fence is considered settled and worth rendering. */
+const SETTLE_MS = 250
+
+/** Attribute marking the body we hide while the diagram is shown. */
+const HIDDEN = 'data-dsh-mermaid-hidden'
+
+/** Copy for the built-in locales; `en` is the fallback. */
+const DICT = {
+  en: {
+    showSource: 'Show source',
+    showDiagram: 'Show diagram',
+    loadFailed: 'Mermaid failed to load: ',
+    renderFailed: 'Mermaid render failed: ',
+  },
+  zh: {
+    showSource: '显示源码',
+    showDiagram: '显示图表',
+    loadFailed: 'Mermaid 加载失败：',
+    renderFailed: 'Mermaid 渲染失败：',
+  },
+}
+
+/** Mermaid statements that may open a diagram. Case matters. */
+const MERMAID_HEAD = /^(?:graph|flowchart|sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|zenuml|info)\b/
+
+/**
+ * Strip the front matter, directives, and comments Mermaid allows before the
+ * first statement, then answer whether that statement opens a diagram.
+ * @param code - the fence source.
+ * @returns true when the fence is a plausible Mermaid diagram.
+ */
+const opensDiagram = (code) => {
+  let rest = code.replace(/^\uFEFF/, '')
+  for (;;) {
+    const before = rest
+    rest = rest.replace(/^\s*%%[^\n]*(?:\n|$)/, '')
+    rest = rest.replace(/^\s*%%\{[\s\S]*?\}%%\s*/, '')
+    rest = rest.replace(/^\s*---\r?\n[\s\S]*?\r?\n---\s*/, '')
+    if (rest === before) break
+  }
+  return MERMAID_HEAD.test(rest.replace(/^\s+/, ''))
+}
+
+/** Readable one-line form of a thrown value. */
+const messageOf = (error) => {
+  if (error instanceof Error && error.message !== '') return error.message
+  const text = String(error)
+  return text === '' ? 'unknown error' : text
+}
+
+const __plugin =  {
+  name: PLUGIN_ID,
+  /**
+   * Register the DOM decorator. The host half is a no-op, so this runs in the
+   * browser only; the guard keeps a non-DOM evaluation harmless.
+   * @param ctx - the plugin's Cordis context.
+   */
   apply(ctx) {
-    // Browser-only plugin. When this bundle is registered as a profile layer
-    // (`dsh.bundle.patch`), the Node-side loader applies it too — where there
-    // is no DOM. Guard here (same pattern the dsh client modules use) so the
-    // server-side application is a harmless no-op and all the real work runs
-    // in the browser, where `document` exists.
     if (typeof document === 'undefined' || typeof window === 'undefined') return
 
-    // ---- package styles: diagram holder, source toggle, error note ----
-    // Colors come from dsh theme tokens so the diagram fits light and dark.
-    // The browser client runtime exposes no `ctx.styles` service, so inject a
-    // <style> element directly and remove it on dispose (fiber-owned cleanup).
+    const state = {
+      disposed: false,
+      uid: 0,
+      /** block -> record */
+      records: new Map(),
+      /** block -> settle timer */
+      timers: new Map(),
+      /** <script> tags this plugin owns */
+      scripts: new Set(),
+      /** serialized render queue */
+      queue: Promise.resolve(),
+      /** cached Mermaid load promise */
+      mermaid: null,
+    }
+
+    // ---- interface copy -------------------------------------------------
+    // The locale service is optional: without it the built-in English copy is
+    // used, and a namespace collision (a double mount) must not fail the plugin.
+    const locale = ctx.get('locale')
+    let t = (key) => DICT.en[key] ?? key
+    if (locale !== undefined && typeof locale.register === 'function' && typeof locale.bind === 'function') {
+      let registered = false
+      ctx.effect(() => {
+        try {
+          const dispose = locale.register(NS, DICT)
+          registered = true
+          return dispose
+        } catch {
+          return () => {}
+        }
+      }, `${PLUGIN_ID}: locale`)
+      if (registered) t = locale.bind(NS)
+    }
+
+    // ---- styles ---------------------------------------------------------
+    // Colors are theme tokens only, so light/dark switching needs no repaint of
+    // the frame around the diagram.
     ctx.effect(() => {
       const style = document.createElement('style')
       style.dataset.dshMermaidStyles = '1'
       style.textContent = `
-      .dsh-mermaid { margin: 8px 0; }
+      .dsh-mermaid { margin-top: 8px; }
       .dsh-mermaid-diagram {
-        overflow-x: auto;
         display: flex;
         justify-content: center;
-        padding: 8px 0;
+        overflow-x: auto;
+        padding: 8px 10px;
+        background: var(--dsw-alias-bg-layer-1);
+        border: 1px solid var(--dsw-alias-border-l1);
+        border-radius: 8px;
       }
       .dsh-mermaid-diagram[hidden] { display: none; }
       .dsh-mermaid-diagram svg { max-width: 100%; height: auto; }
-      .dsh-mermaid-source {
-        margin: 0;
-        padding: 8px 10px;
-        overflow-x: auto;
-        font-size: 12px;
-        line-height: 1.5;
-        color: var(--dsw-alias-label-secondary);
-        background: var(--dsw-alias-bg-layer-1);
-        border: 1px solid var(--dsw-alias-border-l1);
-        border-radius: 6px;
-      }
       .dsh-mermaid-toggle {
         margin-top: 6px;
-        font-size: 12px;
         padding: 2px 10px;
+        font: inherit;
+        font-size: 12px;
         color: var(--dsw-alias-label-secondary);
         background: transparent;
         border: 1px solid var(--dsw-alias-border-l1);
@@ -85,191 +182,279 @@ return {
         border-color: var(--dsw-alias-border-l2);
       }
       .dsh-mermaid-error {
-        font-size: 12px;
-        color: var(--dsw-alias-state-error-primary);
         margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--dsw-alias-state-error-primary);
       }
+      [${HIDDEN}] { display: none !important; }
       `
       ;(document.head ?? document.documentElement).append(style)
       return () => style.remove()
+    }, `${PLUGIN_ID}: styles`)
+
+    // ---- Mermaid --------------------------------------------------------
+    const loadMermaid = () => {
+      if (window.mermaid !== undefined) return Promise.resolve(window.mermaid)
+      if (state.mermaid !== null) return state.mermaid
+      state.mermaid = new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = MERMAID_CDN
+        script.async = true
+        script.onload = () => {
+          state.scripts.delete(script)
+          if (window.mermaid !== undefined) resolve(window.mermaid)
+          else reject(new Error(`window.mermaid is missing after loading ${MERMAID_CDN}`))
+        }
+        script.onerror = () => {
+          state.scripts.delete(script)
+          script.remove()
+          // Let a later fence retry instead of pinning the page to one failed
+          // request.
+          state.mermaid = null
+          reject(new Error(MERMAID_CDN))
+        }
+        state.scripts.add(script)
+        ;(document.head ?? document.documentElement).append(script)
+      })
+      return state.mermaid
+    }
+
+    const themeName = () => {
+      const theme = ctx.get('theme')
+      const scheme = theme?.getTheme?.()?.active?.colorScheme
+      if (scheme === 'dark') return 'dark'
+      if (scheme === 'light') return 'default'
+      try {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'
+      } catch {
+        return 'default'
+      }
+    }
+
+    const configure = (mermaid) => mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: themeName(),
+      fontFamily: 'inherit',
+      // Keep a parse failure out of the page: this plugin renders its own note.
+      suppressErrorRendering: true,
     })
 
-    // Pin a concrete mermaid release for reproducible output. Bump deliberately.
-    const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.min.js'
-    let mermaidPromise = null
-    let uid = 0
+    // ---- DOM ------------------------------------------------------------
+    /** The block's `[data-code-block-content]` body, when the layout has one. */
+    const contentOf = (block) => block.querySelector('[data-code-block-content]')
 
-    // Load the mermaid UMD bundle through a <script> tag. The dynamic client
-    // closure shadows fetch/setTimeout/require but leaves DOM globals intact.
-    const loadMermaid = () => {
-      if (typeof window !== 'undefined' && window.mermaid) return Promise.resolve(window.mermaid)
-      if (mermaidPromise !== null) return mermaidPromise
-      mermaidPromise = new Promise((resolve, reject) => {
-        const tag = document.createElement('script')
-        tag.src = CDN
-        tag.onload = () => {
-          if (window.mermaid) resolve(window.mermaid)
-          else reject(new Error('mermaid loaded but window.mermaid is missing'))
-        }
-        tag.onerror = () => {
-          mermaidPromise = null
-          reject(new Error('mermaid CDN script failed to load'))
-        }
-        document.head.append(tag)
-      })
-      return mermaidPromise
+    /** The fence language the surface prints, when it prints one at all. */
+    const bannerLabel = (block) => {
+      const banner = block.querySelector('[data-code-block-banner]')
+      if (banner === null) return null
+      const head = banner.firstElementChild ?? banner
+      const text = (head.textContent ?? '').trim().toLowerCase()
+      return text === '' ? null : text.split(/\s+/)[0]
     }
 
-    // Follow the dsh theme: dark palette → mermaid dark theme.
-    const schemeOf = () => {
-      try {
-        const theme = ctx.get('theme')
-        if (theme === undefined) return null
-        const snapshot = theme.getTheme()
-        const scheme = snapshot && snapshot.active ? snapshot.active.colorScheme : null
-        return scheme === 'dark' || scheme === 'light' ? scheme : null
-      } catch {
-        return null
+    /**
+     * The fence source, or null when this block is not an unhighlighted fence.
+     * A highlighted fence wraps its shiki output in a `<div>`, so its body's
+     * first element is never the `<pre>` we look for.
+     */
+    const sourceOf = (block) => {
+      const content = contentOf(block)
+      if (content !== null) {
+        const first = content.firstElementChild
+        if (first === null || first.tagName !== 'PRE') return null
       }
+      const pre = (content ?? block).querySelector('pre')
+      if (pre === null) return null
+      const code = (pre.textContent ?? '').replace(/\s+$/, '')
+      return code === '' ? null : code
     }
-    const themeName = () => (schemeOf() === 'dark' ? 'dark' : 'default')
 
-    // Read the language label from the CodeBlock banner. DOM shape:
-    //   .md-code-block > div(bannerWrap) > div(banner) > div(infostring) + div(action > button)
-    const blockLang = (block) => {
-      for (const child of block.children) {
-        if (child.tagName !== 'DIV' || child.querySelector('button') === null) continue
-        const banner = Array.from(child.children).find(el => el.tagName === 'DIV')
-        if (banner === undefined || banner.children.length === 0) return null
-        return (banner.children[0].textContent || '').trim().toLowerCase()
+    const isMermaidFence = (block, code) => (
+      bannerLabel(block) === LANGUAGE || opensDiagram(code)
+    )
+
+    const enqueue = (task) => {
+      const run = state.queue.then(task)
+      state.queue = run.then(() => undefined, () => undefined)
+      return run
+    }
+
+    /** Show either the diagram or the untouched original fence. */
+    const applyView = (record) => {
+      // Re-resolve the body: React may have swapped the element out since the
+      // record was created.
+      const content = contentOf(record.block)
+      record.content = content
+      record.diagram.hidden = record.showSource
+      if (content !== null) content.toggleAttribute(HIDDEN, !record.showSource)
+      record.toggle.textContent = record.showSource ? t('showDiagram') : t('showSource')
+      record.toggle.setAttribute('aria-pressed', String(record.showSource))
+    }
+
+    /**
+     * Create the holder for a block — or recreate it when React replaced the
+     * block's children and dropped it. The holder is appended last so React's
+     * own `bannerWrap` + `content` children keep their positions.
+     */
+    const ensureRecord = (block) => {
+      const known = state.records.get(block)
+      if (known !== undefined && known.holder.isConnected) return known
+      if (known !== undefined) {
+        known.holder.remove()
+        state.records.delete(block)
       }
-      return null
-    }
-
-    const configure = (mermaid) => {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: themeName(),
-        securityLevel: 'strict',
-        fontFamily: 'inherit',
+      const content = contentOf(block)
+      const holder = document.createElement('div')
+      holder.className = 'dsh-mermaid'
+      holder.dataset.dshMermaidHolder = '1'
+      const diagram = document.createElement('div')
+      diagram.className = 'dsh-mermaid-diagram'
+      const toggle = document.createElement('button')
+      toggle.type = 'button'
+      toggle.className = 'dsh-mermaid-toggle'
+      const record = {
+        block,
+        content,
+        holder,
+        diagram,
+        toggle,
+        code: null,
+        showSource: false,
+      }
+      toggle.addEventListener('click', () => {
+        record.showSource = !record.showSource
+        applyView(record)
       })
+      holder.append(diagram, toggle)
+      block.append(holder)
+      state.records.set(block, record)
+      return record
     }
 
-    // Mermaid render ids must be unique per document; never reuse one.
-    const nextId = () => `dsh-mermaid-${Date.now().toString(36)}-${++uid}`
-
-    const paint = (mermaid, diagram, code) => {
+    /** One diagram, rendered with the current theme. */
+    const paint = async (record) => {
+      const mermaid = await loadMermaid()
+      if (state.disposed || !record.block.isConnected) return
       configure(mermaid)
-      return mermaid.render(nextId(), code).then(result => {
-        if (!diagram.isConnected) return
-        diagram.innerHTML = result.svg
-        if (typeof result.bindFunctions === 'function') {
-          try { result.bindFunctions(diagram) } catch { /* interaction binding is best-effort */ }
+      const id = `${PLUGIN_ID}-${(state.uid += 1)}`
+      const result = await mermaid.render(id, record.code)
+      if (state.disposed || !record.block.isConnected) return
+      record.diagram.innerHTML = result.svg
+      if (typeof result.bindFunctions === 'function') {
+        try {
+          result.bindFunctions(record.diagram)
+        } catch {
+          /* interaction binding is best effort */
         }
-      })
-    }
-
-    const maybeRender = (block) => {
-      if (block.dataset.dshMermaid !== undefined || block.dataset.dshBusy !== undefined) return
-      if (blockLang(block) !== 'mermaid') return
-      const pre = block.querySelector('pre')
-      if (pre === null) return
-      const code = (pre.textContent || '').trim()
-      if (code === '') return
-      block.dataset.dshBusy = '1'
-      loadMermaid().then(mermaid => {
-        if (!block.isConnected) return
-        block.dataset.dshBusy = ''
-        block.dataset.dshMermaid = 'done'
-        const holder = document.createElement('div')
-        holder.className = 'dsh-mermaid'
-        holder.dataset.dshMermaid = '1'
-        const diagram = document.createElement('div')
-        diagram.className = 'dsh-mermaid-diagram'
-        diagram.textContent = '渲染中…'
-        const source = document.createElement('pre')
-        source.className = 'dsh-mermaid-source'
-        source.hidden = true
-        source.textContent = code
-        const toggle = document.createElement('button')
-        toggle.type = 'button'
-        toggle.className = 'dsh-mermaid-toggle'
-        toggle.textContent = '显示源码'
-        toggle.onclick = () => {
-          const showSource = !diagram.hidden
-          diagram.hidden = showSource
-          source.hidden = !showSource
-          toggle.textContent = showSource ? '显示图表' : '显示源码'
-        }
-        holder.append(diagram, source, toggle)
-        pre.replaceWith(holder)
-        paint(mermaid, diagram, code).catch(err => {
-          if (!diagram.isConnected) return
-          diagram.textContent = ''
-          const note = document.createElement('div')
-          note.className = 'dsh-mermaid-error'
-          note.textContent = 'Mermaid 渲染失败：' + (err && err.message ? err.message : String(err))
-          diagram.append(note)
-        })
-      }).catch(err => {
-        // CDN load failure: keep the original code block, show one note, no retry.
-        if (!block.isConnected) return
-        block.dataset.dshBusy = ''
-        block.dataset.dshMermaid = 'failed'
-        const pre2 = block.querySelector('pre')
-        if (pre2 === null) return
-        const note = document.createElement('div')
-        note.className = 'dsh-mermaid-error'
-        note.textContent = 'Mermaid 加载失败：' + (err && err.message ? err.message : String(err))
-        pre2.before(note)
-      })
-    }
-
-    // Re-render visible diagrams when the app theme switches.
-    const reflowTheme = () => {
-      const holders = document.querySelectorAll('[data-dsh-mermaid="1"]')
-      for (const holder of holders) {
-        const diagram = holder.querySelector('.dsh-mermaid-diagram')
-        const source = holder.querySelector('.dsh-mermaid-source')
-        if (diagram === null || source === null || diagram.hidden) continue
-        loadMermaid().then(mermaid => {
-          paint(mermaid, diagram, source.textContent || '').catch(() => { /* keep the old diagram on re-theme failure */ })
-        }).catch(() => {})
       }
+      applyView(record)
+      record.block.dataset.dshMermaid = 'done'
+    }
+
+    /** Surface a failure without destroying the fence it came from. */
+    const fail = (block, record, error, key) => {
+      if (state.disposed || !block.isConnected) return
+      if (record !== undefined) {
+        record.holder.remove()
+        state.records.delete(block)
+      }
+      contentOf(block)?.removeAttribute(HIDDEN)
+      block.dataset.dshMermaid = 'failed'
+      const note = document.createElement('div')
+      note.className = 'dsh-mermaid-error'
+      note.dataset.dshMermaidError = '1'
+      note.textContent = t(key) + messageOf(error)
+      block.append(note)
+    }
+
+    const renderBlock = (block) => {
+      if (state.disposed || !block.isConnected) return
+      if (block.dataset.dshMermaid === 'failed') return
+      const code = sourceOf(block)
+      if (code === null || !isMermaidFence(block, code)) return
+      const record = ensureRecord(block)
+      if (record.code === code && block.dataset.dshMermaid === 'done') return
+      record.code = code
+      block.dataset.dshMermaid = 'pending'
+      return enqueue(() => paint(record).catch((error) => fail(block, record, error, 'renderFailed')))
+    }
+
+    /** Wait for a fence to stop changing before rendering it (streaming). */
+    const schedule = (block) => {
+      if (state.disposed || !block.isConnected) return
+      const pending = state.timers.get(block)
+      if (pending !== undefined) window.clearTimeout(pending)
+      state.timers.set(block, window.setTimeout(() => {
+        state.timers.delete(block)
+        renderBlock(block)
+      }, SETTLE_MS))
     }
 
     const scan = (root) => {
-      if (root === null || root.querySelectorAll === undefined) return
-      const blocks = root.querySelectorAll('.md-code-block')
-      for (const block of blocks) maybeRender(block)
+      if (root === null || typeof root.querySelectorAll !== 'function') return
+      for (const block of root.querySelectorAll('.md-code-block')) schedule(block)
     }
 
-    // Watch for newly added blocks and for text changes inside existing ones
-    // (the streaming→settled transition lands the language label in place).
-    const observer = new MutationObserver(mutations => {
+    const repaint = () => {
+      for (const record of state.records.values()) {
+        if (!record.block.isConnected || record.code === null) continue
+        enqueue(() => paint(record).catch((error) => fail(record.block, record, error, 'loadFailed')))
+      }
+    }
+
+    // ---- lifecycle ------------------------------------------------------
+    const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
-        if (mutation.type === 'characterData') {
-          const parent = mutation.target.parentElement
-          if (parent === null || parent.closest === undefined) continue
-          const block = parent.closest('.md-code-block')
-          if (block !== null) maybeRender(block)
-          continue
+        const target = mutation.target
+        if (target.nodeType === 1 && target.closest('[data-dsh-mermaid-holder]') !== null) continue
+        // Streaming edits land as characterData on the fence's text node, and as
+        // a replaced text node (a childList mutation whose added node is not an
+        // element). Both mean "the fence changed" — find the owning block.
+        if (target.nodeType === 1) {
+          const owner = target.closest('.md-code-block')
+          if (owner !== null) schedule(owner)
         }
         for (const node of mutation.addedNodes) {
           if (node.nodeType !== 1) continue
-          if (node.closest !== undefined && node.closest('[data-dsh-mermaid]') !== null) continue
-          if (node.matches !== undefined && node.matches('.md-code-block')) maybeRender(node)
+          if (typeof node.closest === 'function' && node.closest('[data-dsh-mermaid-holder]') !== null) continue
+          if (node.dataset?.dshMermaidError !== undefined) continue
+          if (typeof node.matches === 'function' && node.matches('.md-code-block')) schedule(node)
           else scan(node)
         }
       }
     })
 
     ctx.effect(() => {
-      observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-      scan(document.body)
-      return () => observer.disconnect()
+      const target = document.body ?? document.documentElement
+      observer.observe(target, { childList: true, subtree: true, characterData: true })
+      scan(target)
+      return () => {
+        state.disposed = true
+        observer.disconnect()
+        for (const timer of state.timers.values()) window.clearTimeout(timer)
+        state.timers.clear()
+        for (const script of state.scripts) script.remove()
+        state.scripts.clear()
+        for (const record of state.records.values()) {
+          record.holder.remove()
+          record.content?.removeAttribute(HIDDEN)
+        }
+        state.records.clear()
+        for (const block of document.querySelectorAll('.md-code-block[data-dsh-mermaid]')) {
+          delete block.dataset.dshMermaid
+        }
+        for (const note of document.querySelectorAll('[data-dsh-mermaid-error]')) note.remove()
+        for (const el of document.querySelectorAll(`[${HIDDEN}]`)) el.removeAttribute(HIDDEN)
+      }
+    }, `${PLUGIN_ID}: observer`)
+
+    ctx.on('theme/change', repaint)
+    ctx.on('locale/change', () => {
+      for (const record of state.records.values()) applyView(record)
     })
-    ctx.on('theme/change', reflowTheme)
   },
 }
+
 
