@@ -1,6 +1,6 @@
 {
   "name": "dsh-mermaid-preview",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Render Mermaid fenced code blocks as diagrams in every DeepSeek Harness (dsh) Web Markdown surface.",
   "type": "module",
   "main": "index.js",
@@ -20,6 +20,20 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-conversation"
       ]
+    },
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.2 <0.3.0",
+      "node": ">=18",
+      "dshReleases": {
+        "0.1.7-rc.1": "unknown",
+        "0.1.7-rc.2": "unknown",
+        "0.2.0-rc.1": "compatible",
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-alpha.1": "compatible",
+        "0.2.1-alpha.2": "compatible",
+        "0.2.1-alpha.3": "compatible",
+        "0.2.1-alpha.4": "compatible"
+      }
     }
   },
   "icon": "./icon.svg",

@@ -121,6 +121,7 @@ icon.svg                        Plugin icon
 demo/                           Dependency-free standalone demo page
 docs/install.md                 Install / uninstall / update / verify / FAQ
 docs/architecture.md            Implementation notes and safety
+docs/compatibility.md           Per-release DSH compatibility claims and their evidence
 ```
 
 ## Facts
@@ -129,6 +130,7 @@ docs/architecture.md            Implementation notes and safety
 | --- | --- |
 | Platform | dsh Web (Client half) + empty Host half |
 | Plugin form | dsh bundle client plugin (`dsh.bundle.patch` + `dsh.client`) |
+| DSH compatibility | Declared per release in `dsh.compatibility.dshReleases`; evidence in [docs/compatibility.md](./docs/compatibility.md) |
 | Mermaid | 11.17.2 (UMD, jsDelivr CDN; swap the constant for a mirror) |
 | Dependencies | None at runtime; scripts use Node built-ins only |
 | Safety | `securityLevel: 'strict'`, `suppressErrorRendering`, no telemetry |

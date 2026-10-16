@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-10-16
+
+Answers the DSH STORE author-fix request `AI-Scarlett/DSH-Store#910`
+(`DSH_LATEST_THREE_COMPATIBILITY_HOLD`): the catalog had no exact compatible
+record for any release in its rolling window, so the plugin was unlisted.
+
+### Added
+
+- `dsh.compatibility` in the manifest: a DSH range, a Node range, and an exact
+  per-release `dshReleases` matrix. A range alone is not installable evidence
+  for the store; exact records are.
+- `docs/compatibility.md`: the five checks behind every `compatible` entry, the
+  versions they were run against, and an explicit statement of what those
+  claims do **not** cover (no runtime acceptance, no visual verification).
+- `npm run check` now validates the declaration's shape (full-SemVer keys,
+  known statuses, Node range agreement with `engines.node`, at least one
+  `compatible`).
+
+### Compatibility evidence
+
+`compatible` was declared for `0.2.0-rc.1`, `0.2.0-rc.2`, and
+`0.2.1-alpha.1` … `0.2.1-alpha.4` after, for each version, running **that
+version's own published `@deepseek-ai/dsh-client-modules` scanner** against this
+package and confirming the CodeBlock DOM, locale API, and `inject` target row
+the plugin depends on are still present. `0.1.7-rc.1` and `0.1.7-rc.2` stay
+`unknown`: the same markers happen to hold there, but the 0.1 line was not
+exercised and is not claimed.
+
 ## [0.3.0] - 2026-10-16
 
 Rebuilt against dsh 0.2.0-rc.2 and the plugin spec shipped with it

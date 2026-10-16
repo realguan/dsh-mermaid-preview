@@ -98,6 +98,26 @@ if (check('icon.svg exists', existsSync(join(root, 'icon.svg')))) {
   check('icon.svg within the 256 KiB manifest limit', statSync(join(root, 'icon.svg')).size <= 256 * 1024)
 }
 
+// ---- compatibility declaration ---------------------------------------------
+// DSH STORE (and any consumer of the same convention) reads an exact per-release
+// matrix: `dsh.compatibility.dshReleases`. A range alone is not installable
+// evidence, so the shape is enforced here; the evidence method for each
+// `compatible` entry lives in docs/compatibility.md.
+const compat = pkg.dsh?.compatibility
+if (check('manifest: dsh.compatibility present', typeof compat === 'object' && compat !== null)) {
+  check('compatibility.dsh is a range string', typeof compat.dsh === 'string' && compat.dsh !== '', String(compat.dsh))
+  check('compatibility.node matches engines.node', compat.node === pkg.engines?.node, `${compat.node} vs ${pkg.engines?.node}`)
+  const RELEASE_KEY = /^(?:rc\.(?:7|8)|[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/
+  const releases = compat.dshReleases
+  if (check('compatibility.dshReleases present', typeof releases === 'object' && releases !== null)) {
+    const entries = Object.entries(releases)
+    check('dshReleases uses full SemVer keys', entries.every(([key]) => RELEASE_KEY.test(key)), entries.map(([key]) => key).find((key) => !RELEASE_KEY.test(key)))
+    check('dshReleases values are known statuses', entries.every(([, value]) => ['compatible', 'incompatible', 'unknown'].includes(value)))
+    check('dshReleases declares at least one compatible release', entries.some(([, value]) => value === 'compatible'))
+    console.log(`  (declared: ${entries.filter(([, value]) => value === 'compatible').length} compatible of ${entries.length})`)
+  }
+}
+
 // ---- 3. dist is in sync with src -------------------------------------------
 const outDir = mkdtempSync(join(tmpdir(), 'dsh-mermaid-dist-'))
 try {

@@ -125,6 +125,7 @@ demo/                           零依赖独立演示页
 examples/showcase.md            图型示例合集
 docs/install.md                 安装 / 卸载 / 更新 / 验证 / FAQ
 docs/architecture.md            实现原理与安全说明
+docs/compatibility.md           DSH 版本兼容性声明与逐版本证据
 ```
 
 ## 技术要点
@@ -133,6 +134,7 @@ docs/architecture.md            实现原理与安全说明
 | --- | --- |
 | 平台 | dsh Web（Client 半侧）+ 空 Host 半侧 |
 | 插件形态 | dsh bundle 客户端插件（`dsh.bundle.patch` + `dsh.client`） |
+| DSH 兼容 | 逐版本声明在 `dsh.compatibility.dshReleases`，依据见 [docs/compatibility.md](./docs/compatibility.md) |
 | Mermaid | 11.17.2（UMD，jsDelivr CDN，可按需改镜像） |
 | 依赖 | 无运行时依赖；工具脚本仅用 Node 内置模块 |
 | 安全 | `securityLevel: 'strict'`；`suppressErrorRendering`；不采集任何数据 |
