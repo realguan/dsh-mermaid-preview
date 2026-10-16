@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-10-16
+
+### Fixed
+
+- **流式输出期间的解析错误会永久卡住整个代码块。** 模型停顿超过 250ms 静默窗口时，
+  半截围栏会被渲染一次并抛出 parse error；旧实现随即把块标记为
+  `data-dsh-mermaid="failed"` 并且 `renderBlock` 直接 return——此后即使围栏写完了、
+  或被重新生成的消息复用同一个 DOM 节点，也再也不渲染，红色错误提示一直挂到组件
+  重建。这就是「输出时报错，切走再切回来就好了」的原因：切换会话会销毁并重建消息
+  DOM，顺带清掉了这个标记。
+
+  现在失败不再是终态：
+
+  - 前 3 次失败静默退避重试（400 / 900 / 1800ms），不显示任何提示——半截围栏是
+    「还没写完」，不是「写错了」；
+  - 退避耗尽（文本已停止变化仍失败）才显示红色提示，并保留原始代码块；
+  - 围栏文本再次变化时立即清除提示、重置退避预算并重新渲染——重新生成、模型改写
+    都能恢复；
+  - 错误提示移入插件自己的 holder 内部，observer 不再把自己的写入误判成「围栏变了」；
+  - CDN 加载失败与渲染失败现在使用各自的文案（`loadFailed` / `renderFailed`）。
+
+  副作用：真正语法错误的围栏，错误提示会晚约 3 秒出现（退避跑完才显示）。
+
 ## [0.3.1] - 2026-10-16
 
 Answers the DSH STORE author-fix request `AI-Scarlett/DSH-Store#910`

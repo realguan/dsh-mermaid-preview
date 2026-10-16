@@ -28,10 +28,16 @@
  * 4. Mermaid 11 (UMD, jsDelivr) is fetched once, lazily, only when the first
  *    candidate fence appears. Renders are serialized so a message full of
  *    diagrams cannot block the main thread with parallel work.
- * 5. Theme switches repaint through `ctx.on('theme/change')`; UI copy comes from
+ * 5. A render failure is never final. Streaming cuts a fence mid-statement
+ *    whenever the model pauses for longer than the settle window, and a
+ *    half-written diagram is a parse error, not a user error: the block retries
+ *    with backoff, and only a fence whose text has stopped changing and still
+ *    fails earns the red note. New text on the same block clears the note and
+ *    starts over — a block is never poisoned by one bad snapshot of itself.
+ * 6. Theme switches repaint through `ctx.on('theme/change')`; UI copy comes from
  *    the Client locale service (`ctx.get('locale')`), so it follows the
  *    interface language.
- * 6. Every side effect — styles, observer, listeners, timers, script tag,
+ * 7. Every side effect — styles, observer, listeners, timers, script tag,
  *    injected DOM — is owned by the plugin fiber and removed on stop/update.
  *
  * This module is the canonical source. `scripts/build.mjs` derives
@@ -55,6 +61,14 @@ const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.m
 
 /** Quiet period before a fence is considered settled and worth rendering. */
 const SETTLE_MS = 250
+
+/**
+ * Backoff after a failed render, in milliseconds. A fence that fails while it
+ * is still being streamed usually fails because it is half-written, so the
+ * plugin stays quiet and tries again; only a fence that keeps failing after
+ * these retries — one whose text has stopped changing — earns the error note.
+ */
+const RETRY_MS = [400, 900, 1800]
 
 /** Attribute marking the body we hide while the diagram is shown. */
 const HIDDEN = 'data-dsh-mermaid-hidden'
@@ -187,6 +201,7 @@ const __plugin =  {
         line-height: 1.5;
         color: var(--dsw-alias-state-error-primary);
       }
+      .dsh-mermaid [hidden] { display: none !important; }
       [${HIDDEN}] { display: none !important; }
       `
       ;(document.head ?? document.documentElement).append(style)
@@ -194,6 +209,9 @@ const __plugin =  {
     }, `${PLUGIN_ID}: styles`)
 
     // ---- Mermaid --------------------------------------------------------
+    /** A load failure, tagged so the note can use the load-failed copy. */
+    const loadFailure = (message) => Object.assign(new Error(message), { dshMermaidLoad: true })
+
     const loadMermaid = () => {
       if (window.mermaid !== undefined) return Promise.resolve(window.mermaid)
       if (state.mermaid !== null) return state.mermaid
@@ -204,7 +222,7 @@ const __plugin =  {
         script.onload = () => {
           state.scripts.delete(script)
           if (window.mermaid !== undefined) resolve(window.mermaid)
-          else reject(new Error(`window.mermaid is missing after loading ${MERMAID_CDN}`))
+          else reject(loadFailure(`window.mermaid is missing after loading ${MERMAID_CDN}`))
         }
         script.onerror = () => {
           state.scripts.delete(script)
@@ -212,7 +230,7 @@ const __plugin =  {
           // Let a later fence retry instead of pinning the page to one failed
           // request.
           state.mermaid = null
-          reject(new Error(MERMAID_CDN))
+          reject(loadFailure(MERMAID_CDN))
         }
         state.scripts.add(script)
         ;(document.head ?? document.documentElement).append(script)
@@ -281,14 +299,21 @@ const __plugin =  {
       return run
     }
 
-    /** Show either the diagram or the untouched original fence. */
+    /**
+     * Show the diagram, the untouched original fence, or the failure note. A
+     * failed block keeps its fence visible and drops the toggle: there is no
+     * diagram to switch to.
+     */
     const applyView = (record) => {
       // Re-resolve the body: React may have swapped the element out since the
       // record was created.
       const content = contentOf(record.block)
       record.content = content
-      record.diagram.hidden = record.showSource
-      if (content !== null) content.toggleAttribute(HIDDEN, !record.showSource)
+      const failed = record.failed === true
+      record.diagram.hidden = record.showSource || failed
+      record.note.hidden = !failed
+      record.toggle.hidden = failed
+      if (content !== null) content.toggleAttribute(HIDDEN, !record.showSource && !failed)
       record.toggle.textContent = record.showSource ? t('showDiagram') : t('showSource')
       record.toggle.setAttribute('aria-pressed', String(record.showSource))
     }
@@ -311,23 +336,39 @@ const __plugin =  {
       holder.dataset.dshMermaidHolder = '1'
       const diagram = document.createElement('div')
       diagram.className = 'dsh-mermaid-diagram'
+      diagram.hidden = true
       const toggle = document.createElement('button')
       toggle.type = 'button'
       toggle.className = 'dsh-mermaid-toggle'
+      // The note lives inside the holder, so writing it never looks like a
+      // change to the fence itself — the observer ignores holder subtrees.
+      const note = document.createElement('div')
+      note.className = 'dsh-mermaid-error'
+      note.dataset.dshMermaidError = '1'
+      note.hidden = true
       const record = {
         block,
         content,
         holder,
         diagram,
         toggle,
+        note,
         code: null,
         showSource: false,
+        /** the current text rendered successfully */
+        done: false,
+        /** the current text exhausted its retries and shows the note */
+        failed: false,
+        /** consecutive failures for the current text */
+        failures: 0,
+        /** a render for the current text is in flight */
+        pending: false,
       }
       toggle.addEventListener('click', () => {
         record.showSource = !record.showSource
         applyView(record)
       })
-      holder.append(diagram, toggle)
+      holder.append(diagram, toggle, note)
       block.append(holder)
       state.records.set(block, record)
       return record
@@ -349,47 +390,86 @@ const __plugin =  {
           /* interaction binding is best effort */
         }
       }
+      record.done = true
+      record.failed = false
+      record.failures = 0
+      record.note.textContent = ''
       applyView(record)
       record.block.dataset.dshMermaid = 'done'
     }
 
-    /** Surface a failure without destroying the fence it came from. */
-    const fail = (block, record, error, key) => {
-      if (state.disposed || !block.isConnected) return
-      if (record !== undefined) {
-        record.holder.remove()
-        state.records.delete(block)
+    /**
+     * A failed render. The first failures are almost always a fence that is
+     * still being streamed, so they retry with backoff instead of surfacing;
+     * only once the retries run out does the note appear.
+     */
+    const onFailure = (block, record, error) => {
+      if (state.disposed || !record.block.isConnected) return
+      record.failures += 1
+      const delay = RETRY_MS[record.failures - 1]
+      if (delay !== undefined) {
+        schedule(block, delay, true)
+        return
       }
-      contentOf(block)?.removeAttribute(HIDDEN)
-      block.dataset.dshMermaid = 'failed'
-      const note = document.createElement('div')
-      note.className = 'dsh-mermaid-error'
-      note.dataset.dshMermaidError = '1'
-      note.textContent = t(key) + messageOf(error)
-      block.append(note)
+      const key = error?.dshMermaidLoad === true ? 'loadFailed' : 'renderFailed'
+      fail(block, record, error, key)
     }
 
-    const renderBlock = (block) => {
+    /**
+     * Surface a settled failure without destroying the fence it came from. The
+     * record stays alive and the note stays inside the holder: the next change
+     * of this fence's text clears it and renders again.
+     */
+    const fail = (block, record, error, key) => {
       if (state.disposed || !block.isConnected) return
-      if (block.dataset.dshMermaid === 'failed') return
+      record.failed = true
+      block.dataset.dshMermaid = 'failed'
+      record.note.textContent = t(key) + messageOf(error)
+      applyView(record)
+    }
+
+    /**
+     * Render one block. `force` skips the "nothing changed" guard; the retry
+     * timer uses it to re-attempt the very same text.
+     */
+    const renderBlock = (block, force = false) => {
+      if (state.disposed || !block.isConnected) return
       const code = sourceOf(block)
       if (code === null || !isMermaidFence(block, code)) return
       const record = ensureRecord(block)
-      if (record.code === code && block.dataset.dshMermaid === 'done') return
+      if (!force && record.code === code && (record.done || record.failed || record.pending)) return
+      if (record.code !== code) {
+        // The fence text moved on — a note left by an earlier snapshot of this
+        // same block is stale, and the retry budget starts over. This is what
+        // makes a mid-stream parse error, or a regenerated message that reuses
+        // the same DOM node, recover instead of sticking forever.
+        record.done = false
+        record.failures = 0
+        if (record.failed) {
+          record.failed = false
+          record.note.textContent = ''
+          record.note.hidden = true
+          record.toggle.hidden = false
+        }
+      }
       record.code = code
+      record.pending = true
       block.dataset.dshMermaid = 'pending'
-      return enqueue(() => paint(record).catch((error) => fail(block, record, error, 'renderFailed')))
+      return enqueue(() => paint(record).then(
+        () => { record.pending = false },
+        (error) => { record.pending = false; onFailure(block, record, error) },
+      ))
     }
 
     /** Wait for a fence to stop changing before rendering it (streaming). */
-    const schedule = (block) => {
+    const schedule = (block, delay = SETTLE_MS, force = false) => {
       if (state.disposed || !block.isConnected) return
       const pending = state.timers.get(block)
       if (pending !== undefined) window.clearTimeout(pending)
       state.timers.set(block, window.setTimeout(() => {
         state.timers.delete(block)
-        renderBlock(block)
-      }, SETTLE_MS))
+        renderBlock(block, force)
+      }, delay))
     }
 
     const scan = (root) => {
@@ -399,8 +479,11 @@ const __plugin =  {
 
     const repaint = () => {
       for (const record of state.records.values()) {
-        if (!record.block.isConnected || record.code === null) continue
-        enqueue(() => paint(record).catch((error) => fail(record.block, record, error, 'loadFailed')))
+        if (!record.block.isConnected || record.code === null || record.failed) continue
+        enqueue(() => paint(record).then(
+          () => {},
+          (error) => onFailure(record.block, record, error),
+        ))
       }
     }
 
@@ -409,6 +492,13 @@ const __plugin =  {
       for (const mutation of mutations) {
         const target = mutation.target
         if (target.nodeType === 1 && target.closest('[data-dsh-mermaid-holder]') !== null) continue
+        // Our own bookkeeping must never look like "the fence changed": the
+        // note lives inside the holder, and the two attributes we toggle on the
+        // block and its body are ours alone.
+        if (mutation.type === 'attributes') {
+          const name = mutation.attributeName
+          if (name === HIDDEN || (typeof name === 'string' && name.startsWith('data-dsh-mermaid'))) continue
+        }
         // Streaming edits land as characterData on the fence's text node, and as
         // a replaced text node (a childList mutation whose added node is not an
         // element). Both mean "the fence changed" — find the owning block.
