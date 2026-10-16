@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-10-16
+
+### Fixed
+
+- **`radar-beta`、`kanban`、`treemap-beta` 围栏完全不渲染。** 内容识别的关键词表
+  （`MERMAID_HEAD`）停留在更早的 mermaid 版本，漏掉了 11.x 新增的这三个图表类型：
+  围栏既没有图、也没有切换按钮、更没有错误提示——就像插件没装一样。已按固定的
+  mermaid 11.17.2 重新核对并补齐：新增 `radar-beta`、`kanban`、`treemap-beta`，
+  并接受 mermaid 同样认可的裸名形式 `sankey` / `xychart` / `block` / `packet` /
+  `treemap` 与 `flowchart-elk`；mermaid 根本不认的关键词（裸 `radar`、裸
+  `architecture`）保持不检测，避免接管后只能报 "No diagram type detected"。
+  `check.mjs` 的识别用例从 25 条增加到 35 条，覆盖上述全部类型与反例。
+
 ## [0.3.2] - 2026-10-16
 
 ### Fixed

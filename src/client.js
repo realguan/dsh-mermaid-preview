@@ -89,8 +89,19 @@ const DICT = {
   },
 }
 
-/** Mermaid statements that may open a diagram. Case matters. */
-const MERMAID_HEAD = /^(?:graph|flowchart|sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|zenuml|info)\b/
+/**
+ * Mermaid statements that may open a diagram. Case matters. The list tracks the
+ * pinned Mermaid release (11.17.2): every keyword its `detectType` accepts, and
+ * nothing else — a keyword mermaid does not know at all (`radar`, bare
+ * `architecture`) must stay undetected, or the fence would be taken over only
+ * to fail with "No diagram type detected". A hyphenated *suffix* on a known
+ * keyword (`flowchart-v2`, rejected by mermaid since v9) still matches by
+ * prefix on purpose: the fence looks like a diagram, so it is taken over and
+ * mermaid's own error note explains the syntax. Verified against 11.17.2:
+ * `radar-beta`, `kanban`, `treemap-beta`, the bare `sankey` / `xychart` /
+ * `block` / `packet` / `treemap` forms and `flowchart-elk` are all accepted.
+ */
+const MERMAID_HEAD = /^(?:graph|flowchart(?:-elk)?|sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|(?:sankey|xychart|block|packet|treemap)(?:-beta)?|radar-beta|architecture-beta|kanban|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|zenuml|info)\b/
 
 /**
  * Strip the front matter, directives, and comments Mermaid allows before the

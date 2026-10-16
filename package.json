@@ -1,6 +1,6 @@
 {
   "name": "dsh-mermaid-preview",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Render Mermaid fenced code blocks as diagrams in every DeepSeek Harness (dsh) Web Markdown surface.",
   "type": "module",
   "main": "index.js",
