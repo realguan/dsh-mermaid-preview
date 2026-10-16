@@ -95,7 +95,7 @@ dsh plugin --profile web add github:realguan/dsh-mermaid-preview
    `dsh.bundle.patch`、`dsh.client.platform === 'web'`、`exports["./package.json"]`、
    `./locale/*.json`、图标大小）；
 3. `dist/` 与 `src/` 一致（防止「改了源码忘了 build」这一客户端插件的经典静默故障）；
-4. mermaid 识别启发式的 25 条用例（含 front matter、指令、注释、误判样本）；
+4. mermaid 识别启发式的 35 条用例（含 front matter、指令、注释、11.x 新图型、误判样本）；
 5. 插件、演示页、文档里的 mermaid 版本号一致。
 
 它**不**能证明浏览器里的观感。视觉验证需要在装有插件的 dsh Web 页面上，
@@ -105,7 +105,12 @@ dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 - 「显示源码 / 显示图表」切换正常，代码块自带的复制按钮仍能复制源码；
 - 明暗主题切换后图跟着重绘；
 - 语法错误的围栏保留代码块并显示红色提示；
-- 停用插件后页面恢复原样（无残留样式与节点）。
+- 点图表或「放大」按钮打开查看器：滚轮缩放（光标处内容不动）、拖拽平移、
+  「适应窗口」回到整图、双击在适应窗口与 1:1 间切换、`Esc` 关闭后焦点回到触发元素；
+- 查看器打开时滚轮不会滚动背后的消息流；
+- 界面语言切成英文/中文后，按钮、查看器工具栏与提示文案跟着变（不需要刷新页面）；
+- 显示图表时「代码块」横幅隐藏，切到源码视图后横幅与复制按钮回来；
+- 停用插件后页面恢复原样（无残留样式、横幅属性、节点与查看器）。
 
 ---
 
@@ -140,3 +145,29 @@ dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 
 确认 dsh 版本仍发出 `theme/change` 事件（`cordis_inspect_query` 的 client `Event`
 目录里能看到）。若事件改名，插件需要同步更新。
+
+**宽图看不清 / 想看大图**
+
+点图表本身，或图表下方的「放大」按钮。查看器默认适应窗口；滚轮缩放、拖拽平移、
+双击在适应窗口与 1:1 间切换、`0` 复位、`Esc` 关闭。首屏看不到入口时注意两点：
+「放大」只在图渲染成功后出现（渲染中或失败时隐藏），切到「显示源码」时也隐藏。
+查看器用的是 SVG 副本，关闭后代码块不受影响。
+
+**图表完全不出现，连「显示源码 / 放大」按钮都没有**
+
+这说明插件在接管之前就抛了错（不是识别或语法问题）：块保持原样、没有 holder、也没有
+错误提示。打开控制台看有没有 uncaught 报错并提 issue；0.4.0 之前有过一次这样的回归
+（渲染路径上读到不可用的服务属性），已在 0.4.0 修掉并把定时器回调也包进了 try/catch ——
+现在任何逃逸错误都会变成红色提示，而不是让整块安静地死掉。
+
+**界面是中文，插件文案却是英文**
+
+插件会跟随 dsh 的语言设置：locale 服务就绪后注册命名空间 `dsh-mermaid-preview`
+并绑定它的翻译函数（服务晚于本插件挂载也没关系，每次取文案都会重试），服务不可用
+时按 `document.documentElement.lang` 在内置中/英字典间选择。若仍显示英文，检查：
+
+1. 文档语言是否被设置：控制台执行 `document.documentElement.lang`，中文界面下应为
+   `zh` 或 `zh-*`；
+2. locale 服务是否在页面上：`window.__DSH_BOOT__.entries.map(e => e.id)` 里能看到
+   `@deepseek-ai/dsh-client-locale`；
+3. 两者都不成立时插件只能退回内置 `en`——这是它唯一的英文来源。

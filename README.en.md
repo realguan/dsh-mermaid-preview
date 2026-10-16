@@ -74,6 +74,13 @@ Full checklist: [docs/install.md](./docs/install.md).
 - 🌐 **Follows the locale** — button copy goes through the Client locale service
 - 📋 **Keeps the host controls** — no React node is replaced, so the built-in copy
   button still works; a "show source / show diagram" toggle is added
+- 🔍 **Click to enlarge** — models love very wide diagrams, and the fence's width
+  shrinks them to unreadable type. Click the diagram (or the "Zoom" button) for a
+  full-window viewer: wheel zoom, drag to pan, fit / 1:1, `Esc` to close
+  (see [architecture.md](./docs/architecture.md) §7)
+- 🧾 **No code banner over a diagram** — a diagram is not code, so the shell's
+  generic code label and its collapse/copy buttons step aside while one is on
+  screen; they come back with the source view
 - 🛟 **Fails soft** — a CDN or syntax failure keeps the original code block and
   shows an inline note
 - 🧹 **Clean disposal** — styles, observer, timers, script tag, and injected DOM
@@ -148,6 +155,14 @@ docs/compatibility.md           Per-release DSH compatibility claims and their e
 - **Nothing renders while streaming**: by design; a fence must be quiet for 250 ms.
 - **A non-Mermaid fence became a diagram**: detection is content-based, so a fence
   whose first line happens to be `graph TD` is claimed. Change that first line.
+- **The diagram is too wide to read**: click it, or the "Zoom" button under it, for
+  the full-window viewer. Fit is the default; wheel zooms about the pointer, drag
+  pans, double-click toggles fit ↔ 1:1, `0` resets, `Esc` closes. The viewer works
+  on an SVG copy, so the code block itself is untouched.
+- **Copy is English while the interface is Chinese**: the plugin follows dsh's
+  language setting — it binds the locale service's namespace dictionary once that
+  service is up, and falls back to the built-in dictionary picked by `<html lang>`
+  before then. If it still shows English, the shell offered neither.
 
 More in [docs/install.md](./docs/install.md).
 
