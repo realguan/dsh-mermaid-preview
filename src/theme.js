@@ -300,6 +300,26 @@ const LIGHT = {
     plotColorPalette: '#7C9DE8,#93AEDD,#8A96A6,#B6C6DD,#5C6C82',
   },
 
+  /* --- architecture / C4 / radar (newer diagram types) ------------------ */
+  archEdgeColor: '#8A9099',
+  archEdgeArrowColor: '#8A9099',
+  archEdgeWidth: '2',
+  archGroupBorderColor: 'rgba(0,0,0,0.16)',
+  archGroupBorderWidth: '1.5px',
+  personBkg: '#E9EFF8',
+  personBorder: 'rgba(77,107,254,0.42)',
+  radar: {
+    axisColor: '#8A9099',
+    axisStrokeWidth: 1,
+    axisLabelFontSize: 12,
+    graticuleColor: 'rgba(0,0,0,0.12)',
+    graticuleOpacity: 0,
+    graticuleStrokeWidth: 1,
+    legendFontSize: 12,
+    curveOpacity: 0.22,
+    curveStrokeWidth: 2,
+  },
+
   /* --- CSS that variables cannot reach ---------------------------------- */
   /* Appended AFTER the generated diagram CSS, so equal-specificity rules win.
    * Mermaid scopes these to the SVG's own id, and `securityLevel:'strict'`
@@ -342,6 +362,7 @@ const LIGHT = {
   /* gantt: hairlines instead of the stock 2px task outline, quieter title */
   .task { stroke-width: 1px; }
   .taskText, .taskTextOutsideLeft, .taskTextOutsideRight { font-size: 12px; }
+  .taskTextOutsideRight, .taskTextOutsideLeft { fill: #61666B !important; }
   .titleText { font-size: 15px; }
   .sectionTitle { font-size: 12px; }
   .grid .tick text { font-size: 11px; }
@@ -354,12 +375,72 @@ const LIGHT = {
      matching arrowheads are plain black SVG lines */
   line[stroke="black"] { stroke: rgba(0,0,0,0.14); stroke-width: 1.5px; }
   line.task-line { stroke: rgba(0,0,0,0.14); }
-  marker path { fill: rgba(0,0,0,0.22); }
+  marker path { fill: rgba(0,0,0,0.22); stroke: rgba(0,0,0,0.22); }
   .mouth { stroke: rgba(0,0,0,0.35); }
 
   /* git graph: 8px branch rails are too loud for a chat card */
   .arrow { stroke-width: 3px; }
   .commit-merge { fill: #FFFFFF; stroke: rgba(0,0,0,0.16); }
+
+  /* packet: mermaid ships hard-coded #efefef cells with black rules */
+  .packetBlock { fill: #EFF3F8; stroke: #8A9099; stroke-width: 1px; }
+  .packetLabel { fill: #0F1115; font-size: 12px; }
+  .packetTitle { fill: #0F1115; font-size: 14px; font-weight: 600; }
+  .packetByte, .packetByte.start, .packetByte.end { fill: #61666B; }
+
+  /* C4: white label text on the canonical palette; repaint text only */
+  .c4-shape .label text,
+  .c4-shape .label .text-outer-tspan,
+  .c4-shape .label .text-inner-tspan { fill: #0F1115; }
+  [stroke="#444444"] { stroke: #8A9099; }
+  [fill="#444444"] { fill: #0F1115; }
+
+  /* architecture-beta: built-in icons carry a hard-coded blue background */
+  .architecture-service rect[width="80"] { fill: #4176E6 !important; }
+
+  /* sankey: node fills are hard-coded attributes from the stock palette */
+  .nodes g.node:nth-of-type(6n+1) rect { fill: #DCE4F0; stroke: #B4C2D8; }
+  .nodes g.node:nth-of-type(6n+2) rect { fill: #E3E8F0; stroke: #C3CCDA; }
+  .nodes g.node:nth-of-type(6n+3) rect { fill: #D3DDEA; stroke: #AEBED4; }
+  .nodes g.node:nth-of-type(6n+4) rect { fill: #E8ECF2; stroke: #C9D1DC; }
+  .nodes g.node:nth-of-type(6n+5) rect { fill: #D8E1EE; stroke: #B7C5DA; }
+  .nodes g.node:nth-of-type(6n+6) rect { fill: #DFE5EE; stroke: #BEC9D9; }
+  .node-labels text { fill: #0F1115; }
+
+  /* radar: stock graticule is a filled grey disk, curves stroke their tint */
+  .radarGraticule { fill: none; stroke: rgba(0,0,0,0.12); stroke-width: 1px; }
+  .radarCurve-0, .radarCurve-1, .radarCurve-2, .radarCurve-3,
+  .radarCurve-4, .radarCurve-5, .radarCurve-6, .radarCurve-7,
+  .radarCurve-8, .radarCurve-9, .radarCurve-10, .radarCurve-11 { stroke: rgba(0,0,0,0.28); }
+  .radarLegendBox-0, .radarLegendBox-1, .radarLegendBox-2, .radarLegendBox-3,
+  .radarLegendBox-4, .radarLegendBox-5, .radarLegendBox-6, .radarLegendBox-7,
+  .radarLegendBox-8, .radarLegendBox-9, .radarLegendBox-10, .radarLegendBox-11 { stroke: rgba(0,0,0,0.28); }
+
+  /* journey: stock section/task borders are a hard-coded #666666 */
+  .journey-section, [class*="task-type-"] { stroke: rgba(0,0,0,0.14); }
+  /* journey faces: the eyes are hard-coded #666 circles */
+  circle[fill="#666"], circle[stroke="#666"] { fill: #61666B; stroke: #61666B; }
+
+  /* gantt: the d3 axis writes stroke="currentColor" on the grid tick lines */
+  .grid .tick line, .grid path.domain { stroke: rgba(0,0,0,0.10); }
+
+  /* sankey: the stock link layer blends with multiply */
+  .links .link { mix-blend-mode: normal !important; }
+
+  /* sequence autonumber discs: the stock text font is sans-serif */
+  .sequenceNumber { font-family: ${FONT_STACK}; }
+
+  /* block: labelled edges carry a hard-coded dark label stroke */
+  .block .edgeLabel rect { fill: #F9FAFB; stroke: rgba(0,0,0,0.14); }
+  .block .edgeLabel text, .block .edgeLabel span { fill: #0F1115; }
+
+  /* gitGraph: HIGHLIGHT commits get a visible edge */
+  .commit-highlight-outer { fill: #F9FAFB; stroke: rgba(0,0,0,0.14); }
+  .commit-highlight-inner { fill: #E9EFF8; stroke: #4176E6; stroke-width: 1px; }
+
+  /* treemap: cap the renderer's 38px leaf labels */
+  .treemapLabel { font-size: 20px !important; }
+  .treemapValue { font-size: 13px !important; }
 
   /* pie title follows the markdown heading weight, not the stock 400 */
   .pieTitleText { font-weight: 600; }
@@ -641,6 +722,26 @@ const DARK = {
     plotColorPalette: '#6F92D8,#8FA6C7,#9AA6B5,#4F6FA8,#B8C2CE',
   },
 
+  /* --- architecture / C4 / radar (newer diagram types) ------------------ */
+  archEdgeColor: '#8A9099',
+  archEdgeArrowColor: '#8A9099',
+  archEdgeWidth: '2',
+  archGroupBorderColor: 'rgba(255,255,255,0.18)',
+  archGroupBorderWidth: '1.5px',
+  personBkg: '#23262E',
+  personBorder: 'rgba(255,255,255,0.24)',
+  radar: {
+    axisColor: '#8A9099',
+    axisStrokeWidth: 1,
+    axisLabelFontSize: 12,
+    graticuleColor: 'rgba(255,255,255,0.12)',
+    graticuleOpacity: 0,
+    graticuleStrokeWidth: 1,
+    legendFontSize: 12,
+    curveOpacity: 0.22,
+    curveStrokeWidth: 2,
+  },
+
   themeCSS: `
   g.classGroup text { fill: #EBEEF2; stroke: none; }
   g.classGroup line { stroke: rgba(255,255,255,0.12); }
@@ -666,6 +767,7 @@ const DARK = {
 
   .task { stroke-width: 1px; }
   .taskText, .taskTextOutsideLeft, .taskTextOutsideRight { font-size: 12px; }
+  .taskTextOutsideRight, .taskTextOutsideLeft { fill: #A8ADB6 !important; }
   .titleText { font-size: 15px; }
   .sectionTitle { font-size: 12px; }
   .grid .tick text { font-size: 11px; }
@@ -674,11 +776,71 @@ const DARK = {
 
   line[stroke="black"] { stroke: rgba(255,255,255,0.14); stroke-width: 1.5px; }
   line.task-line { stroke: rgba(255,255,255,0.14); }
-  marker path { fill: rgba(255,255,255,0.22); }
+  marker path { fill: rgba(255,255,255,0.22); stroke: rgba(255,255,255,0.22); }
   .mouth { stroke: rgba(255,255,255,0.35); }
 
   .arrow { stroke-width: 3px; }
   .commit-merge { fill: #232324; stroke: rgba(255,255,255,0.16); }
+
+  /* packet: mermaid ships hard-coded #efefef cells with black rules */
+  .packetBlock { fill: #23262C; stroke: #8A9099; stroke-width: 1px; }
+  .packetLabel { fill: #EBEEF2; font-size: 12px; }
+  .packetTitle { fill: #EBEEF2; font-size: 14px; font-weight: 600; }
+  .packetByte, .packetByte.start, .packetByte.end { fill: #A8ADB6; }
+
+  /* C4: white label text on the canonical palette; repaint text only */
+  .c4-shape .label text,
+  .c4-shape .label .text-outer-tspan,
+  .c4-shape .label .text-inner-tspan { fill: #EBEEF2; }
+  [stroke="#444444"] { stroke: #8A9099; }
+  [fill="#444444"] { fill: #EBEEF2; }
+
+  /* architecture-beta: built-in icons carry a hard-coded blue background */
+  .architecture-service rect[width="80"] { fill: #4176E6 !important; }
+
+  /* sankey: node fills are hard-coded attributes from the stock palette */
+  .nodes g.node:nth-of-type(6n+1) rect { fill: #2E3746; stroke: #4A5668; }
+  .nodes g.node:nth-of-type(6n+2) rect { fill: #333A43; stroke: #4F5764; }
+  .nodes g.node:nth-of-type(6n+3) rect { fill: #2B3442; stroke: #465365; }
+  .nodes g.node:nth-of-type(6n+4) rect { fill: #363B43; stroke: #525864; }
+  .nodes g.node:nth-of-type(6n+5) rect { fill: #303A4A; stroke: #4B596D; }
+  .nodes g.node:nth-of-type(6n+6) rect { fill: #343A42; stroke: #505763; }
+  .node-labels text { fill: #EBEEF2; }
+
+  /* radar: stock graticule is a filled grey disk, curves stroke their tint */
+  .radarGraticule { fill: none; stroke: rgba(255,255,255,0.12); stroke-width: 1px; }
+  .radarCurve-0, .radarCurve-1, .radarCurve-2, .radarCurve-3,
+  .radarCurve-4, .radarCurve-5, .radarCurve-6, .radarCurve-7,
+  .radarCurve-8, .radarCurve-9, .radarCurve-10, .radarCurve-11 { stroke: rgba(255,255,255,0.36); }
+  .radarLegendBox-0, .radarLegendBox-1, .radarLegendBox-2, .radarLegendBox-3,
+  .radarLegendBox-4, .radarLegendBox-5, .radarLegendBox-6, .radarLegendBox-7,
+  .radarLegendBox-8, .radarLegendBox-9, .radarLegendBox-10, .radarLegendBox-11 { stroke: rgba(255,255,255,0.36); }
+
+  /* journey: stock section/task borders are a hard-coded #666666 */
+  .journey-section, [class*="task-type-"] { stroke: rgba(255,255,255,0.14); }
+  /* journey faces: the eyes are hard-coded #666 circles */
+  circle[fill="#666"], circle[stroke="#666"] { fill: #A8ADB6; stroke: #A8ADB6; }
+
+  /* gantt: the d3 axis writes stroke="currentColor" on the grid tick lines */
+  .grid .tick line, .grid path.domain { stroke: rgba(255,255,255,0.14); }
+
+  /* sankey: the stock link layer blends with multiply */
+  .links .link { mix-blend-mode: normal !important; }
+
+  /* sequence autonumber discs: the stock text font is sans-serif */
+  .sequenceNumber { font-family: ${FONT_STACK}; }
+
+  /* gitGraph: HIGHLIGHT commits get a visible edge */
+  .commit-highlight-outer { fill: #1B1B1C; stroke: rgba(255,255,255,0.18); }
+  .commit-highlight-inner { fill: #262A33; stroke: #8A9099; stroke-width: 1px; }
+
+  /* block: labelled edges carry a hard-coded dark label stroke */
+  .block .edgeLabel rect { fill: #1B1B1C; stroke: rgba(255,255,255,0.14); }
+  .block .edgeLabel text, .block .edgeLabel span { fill: #EBEEF2; }
+
+  /* treemap: cap the renderer's 38px leaf labels */
+  .treemapLabel { font-size: 20px !important; }
+  .treemapValue { font-size: 13px !important; }
 
   .pieTitleText { font-weight: 600; }
 
@@ -704,6 +866,37 @@ const DARK = {
 const QUIET_THEMES = {
   light: { theme: 'base', themeVariables: LIGHT, themeCSS: LIGHT.themeCSS },
   dark: { theme: 'base', themeVariables: DARK, themeCSS: DARK.themeCSS },
+}
+
+/* ------------------------------------------------------------------------- *
+ * C4 helpers (context / container / component)
+ *
+ * Mermaid's C4 renderer paints every box with an inline `!important` style
+ * whose colours come from the `c4` diagram config, not from themeVariables —
+ * so the only way to theme C4 is to hand it palette values.
+ * ------------------------------------------------------------------------- */
+
+/** Element types the C4 renderer knows; each has bg/border config keys. */
+const C4_ELEMENT_TYPES = ['person', 'system', 'system_db', 'system_queue', 'container', 'container_db', 'container_queue', 'component', 'component_db', 'component_queue']
+
+/** Every C4 type also has an `external_` twin. */
+const C4_ALL_TYPES = C4_ELEMENT_TYPES.flatMap((type) => [type, `external_${type}`])
+
+/** C4 config keys that accept a font family. */
+const C4_FONT_KEYS = [...C4_ALL_TYPES, 'boundary', 'message']
+
+/** Pastel hue for each C4 element family (externals stay neutral). */
+const C4_HUE = {
+  person: 'purple',
+  system: 'blue',
+  system_db: 'blue',
+  system_queue: 'blue',
+  container: 'green',
+  container_db: 'green',
+  container_queue: 'green',
+  component: 'orange',
+  component_db: 'orange',
+  component_queue: 'orange',
 }
 
 /**
@@ -839,6 +1032,51 @@ export const CONFIG = {
     xAxis: { labelFontSize: 11, titleFontSize: 12, tickWidth: 1, axisLineWidth: 1, tickLength: 4 },
     yAxis: { labelFontSize: 11, titleFontSize: 12, tickWidth: 1, axisLineWidth: 1, tickLength: 4 },
   },
+  /* C4: fonts + density. Colours are scheme-dependent (see schemeConfig). */
+  c4: {
+    useMaxWidth: true,
+    diagramMarginX: 40,
+    diagramMarginY: 8,
+    c4ShapeMargin: 40,
+    c4ShapePadding: 16,
+    boxMargin: 8,
+    c4ShapeInRow: 4,
+    c4BoundaryInRow: 2,
+    ...Object.fromEntries(C4_FONT_KEYS.map((key) => [`${key}FontFamily`, FONT_STACK])),
+    ...Object.fromEntries(C4_FONT_KEYS.filter((key) => key !== 'message').map((key) => [`${key}FontSize`, 14])),
+    messageFontSize: 12,
+  },
+  /* architecture-beta: edges/groups are theme variables; these are layout. */
+  architecture: {
+    useMaxWidth: true,
+    iconSize: 64,
+    padding: 28,
+    fontSize: 14,
+    nodeSeparation: 60,
+  },
+  /* sankey-beta: colours come from `sankey.nodeColors` (CSS cycles node fills)
+     and `sankey.linkColor` (scheme-dependent, neutral). */
+  sankey: {
+    useMaxWidth: true,
+    width: 600,
+    height: 400,
+    showValues: true,
+    nodeWidth: 12,
+    nodePadding: 16,
+  },
+  /* radar-beta: sizes only; colours are themeVariables.radar + themeCSS. */
+  radar: {
+    useMaxWidth: true,
+    width: 520,
+    height: 520,
+    marginTop: 40,
+    marginRight: 40,
+    marginBottom: 40,
+    marginLeft: 40,
+  },
+  /* Newer beta diagram types: keep them inside the reading column. */
+  packet: { useMaxWidth: true },
+  block: { useMaxWidth: true, padding: 8 },
 }
 
 /**
@@ -854,6 +1092,8 @@ const QUIET_SCHEME_CONFIG = {
       sectionColours: ['#0F1115'],
       actorColours: ['#EFF2F6', '#E9EDF3', '#F2F4F7', '#EAEFF5', '#F0F3F6', '#E7ECF2'],
     },
+    c4: c4ConfigFor(quietPalette('light')),
+    sankey: { linkColor: '#8A9099' },
   },
   dark: {
     journey: {
@@ -861,6 +1101,8 @@ const QUIET_SCHEME_CONFIG = {
       sectionColours: ['#EBEEF2'],
       actorColours: ['#35383D', '#303338', '#3A3D42', '#33363B', '#373A3F', '#2E3136'],
     },
+    c4: c4ConfigFor(quietPalette('dark')),
+    sankey: { linkColor: '#6E737B' },
   },
 }
 
@@ -1049,9 +1291,9 @@ const makeThemeVariables = (p) => {
     edgeLabelBackground: p.card,
 
     /* --- notes / callouts ---------------------------------------------- */
-    noteBkgColor: p.tint.yellow,
+    noteBkgColor: p.yellowTint ?? p.tint.yellow,
     noteTextColor: text,
-    noteBorderColor: p.sys.yellow,
+    noteBorderColor: p.yellowEdge ?? p.sys.yellow,
     noteFontWeight: 'normal',
 
     /* --- sequence ------------------------------------------------------- */
@@ -1130,7 +1372,7 @@ const makeThemeVariables = (p) => {
     pie5: p.sys.purple,
     pie6: p.sys.teal,
     pie7: p.sys.indigo,
-    pie8: p.sys.yellow,
+    pie8: p.vividYellow ?? p.sys.yellow,
     pie9: p.sys.red,
     pie10: p.sys.mint,
     pie11: p.sys.brown,
@@ -1178,8 +1420,8 @@ const makeThemeVariables = (p) => {
     commitLabelBackground: p.card,
     commitLabelFontSize: '11px',
     tagLabelColor: text,
-    tagLabelBackground: p.tint.yellow,
-    tagLabelBorder: p.sys.yellow,
+    tagLabelBackground: p.yellowTint ?? p.tint.yellow,
+    tagLabelBorder: p.yellowEdge ?? p.sys.yellow,
     tagLabelFontSize: '11px',
 
     /* --- timeline / mindmap --------------------------------------------- */
@@ -1190,7 +1432,7 @@ const makeThemeVariables = (p) => {
     cScale4: p.tint.purple,
     cScale5: p.tint.teal,
     cScale6: p.tint.indigo,
-    cScale7: p.tint.yellow,
+    cScale7: p.yellowTint ?? p.tint.yellow,
     cScale8: p.tint.red,
     cScale9: p.tint.mint,
     cScale10: p.tint.brown,
@@ -1254,6 +1496,30 @@ const makeThemeVariables = (p) => {
       yAxisLineColor: p.separator,
       plotColorPalette: `${p.sys.blue},${p.sys.green},${p.sys.orange},${p.sys.pink},${p.sys.purple}`,
     },
+
+    /* --- architecture-beta (edges/groups are theme variables) ------------ */
+    archEdgeColor: p.edge,
+    archEdgeArrowColor: p.edge,
+    archEdgeWidth: '2',
+    archGroupBorderColor: p.separator,
+    archGroupBorderWidth: '1.5px',
+
+    /* --- C4: only the person silhouette is a theme variable -------------- */
+    personBkg: p.tint.purple,
+    personBorder: p.sys.purple,
+
+    /* --- radar-beta: the graticule/axis/curve knobs live in `radar` ------ */
+    radar: {
+      axisColor: p.edge,
+      axisStrokeWidth: 1,
+      axisLabelFontSize: 12,
+      graticuleColor: p.separator,
+      graticuleOpacity: 0,
+      graticuleStrokeWidth: 1,
+      legendFontSize: 12,
+      curveOpacity: 0.22,
+      curveStrokeWidth: 2,
+    },
   }
 }
 
@@ -1274,19 +1540,32 @@ const nodeCycleCSS = (p) =>
     const fill = p.tint[name]
     const fillAlt = p.tintAlt[name]
     const stroke = p.sys[name]
+    // Flowchart-family renderers put nodes under `.nodes`; block-beta puts them
+    // straight under `g.block`, so both scopes need the same cycle. The block
+    // scope is spelled out separately because mermaid namespaces every themeCSS
+    // selector with the diagram id (no `:is()` rewriting assumed).
+    const scope = (parent) => `${parent} g.node:nth-of-type(6n+${n}):not(.mindmap-node)`
+    const scopes = [scope('.nodes'), scope('.block')]
+    const shapes = [
+      '.outer-path path',
+      'g.basic.label-container path',
+      'rect.basic',
+      'polygon.label-container',
+      'circle.basic',
+      'path.outer-path',
+      'path.basic',
+      'path.label-container',
+      'ellipse.basic',
+      'ellipse.label-container',
+    ]
+      .flatMap((shape) => scopes.map((s) => `${s} ${shape}`))
+      .join(',\n  ')
+    const rows = (className) =>
+      scopes.map((s) => `${s} .${className} path`).join(',\n  ')
     return `
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) .outer-path path,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) g.basic.label-container path,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) rect.basic,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) polygon.label-container,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) circle.basic,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) path.outer-path,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) path.basic,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) path.label-container,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) ellipse.basic,
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) ellipse.label-container { fill: ${fill}; stroke: ${stroke}; }
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) .row-rect-odd path { fill: ${fill}; }
-  .nodes g.node:nth-of-type(6n+${n}):not(.mindmap-node) .row-rect-even path { fill: ${fillAlt}; }`
+  ${shapes} { fill: ${fill}; stroke: ${stroke}; }
+  ${rows('row-rect-odd')} { fill: ${fill}; }
+  ${rows('row-rect-even')} { fill: ${fillAlt}; }`
   }).join('\n')
 
 /**
@@ -1329,6 +1608,13 @@ const sharedCSS = (p) => {
   .sections .cluster.section-4 .cluster-label text, .sections .cluster.section-4 .cluster-label span { fill: ${kanbanHeading(3)}; color: ${kanbanHeading(3)}; }
   .items g.node rect.basic.label-container { fill: ${p.nodeFill ?? (p.darkTint ? '#232324' : '#FFFFFF')}; stroke: ${p.separator}; }`
 
+  /* Radar curves: fill from the pastel tint, stroke from the solid hue. */
+  const radarHues = ['blue', 'green', 'orange', 'pink', 'purple', 'teal', 'indigo', 'yellow', 'red', 'mint', 'brown', 'gray']
+  const radarRules = radarHues
+    .map((name, index) => `  .radarCurve-${index} { fill: ${p.tint[name]}; stroke: ${p.sys[name]}; }
+  .radarLegendBox-${index} { fill: ${p.tint[name]}; stroke: ${p.sys[name]}; }`)
+    .join('\n')
+
   return `
   /* class/state stock sheets paint SVG-text fills; HTML labels ignore these */
   g.classGroup text { fill: ${text}; stroke: none; }
@@ -1369,6 +1655,11 @@ ${gitChipRules}
   .doneText0, .doneText1, .doneText2, .doneText3 { fill: ${p.doneText ?? (p.darkTint ? '#7FE3A0' : '#0B6B2F')} !important; }
   .doneCritText0, .doneCritText1, .doneCritText2, .doneCritText3 { fill: #FFFFFF !important; }
   .activeCritText0, .activeCritText1, .activeCritText2, .activeCritText3 { fill: ${p.activeText} !important; }
+  /* When a bar is narrower than its label, mermaid moves the label outside and
+     keeps the in-bar active/done/crit classes on it — those !important colours
+     (white on a pastel section band) become unreadable. Outside labels always
+     take the outside colour; this must stay after the rules above. */
+  .taskTextOutsideRight, .taskTextOutsideLeft { fill: ${p.textOutside ?? secondary} !important; }
 
   /* pie: vivid slices, white percentage labels with a legibility halo */
   .pieTitleText { font-weight: 600; }
@@ -1380,6 +1671,14 @@ ${gitChipRules}
     stroke-linejoin: round;
   }
 
+  /* packet: mermaid ships hard-coded #efefef cells with black rules; map the
+     bit-field onto the active design system instead. Cell fills stay calm
+     (pastel), rules use the system accent, labels use the theme text colour. */
+  .packetBlock { fill: ${p.tint.blue}; stroke: ${p.sys.blue}; stroke-width: 1px; }
+  .packetLabel { fill: ${text}; font-size: 12px; }
+  .packetTitle { fill: ${text}; font-size: 14px; font-weight: 600; }
+  .packetByte, .packetByte.start, .packetByte.end { fill: ${secondary}; }
+
   /* sequence numbers: indigo chips with on-accent digits */
   [id$="-sequencenumber"] { fill: ${p.sys.indigo}; }
   .sequenceNumber { fill: ${p.onAccentText ?? '#FFFFFF'}; }
@@ -1390,7 +1689,7 @@ ${gitChipRules}
   text[font-size="4ex"] { font-size: 16px; }
   line[stroke="black"] { stroke: ${p.darkTint ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)'}; stroke-width: 1.5px; }
   line.task-line { stroke: ${p.darkTint ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)'}; }
-  marker path { fill: ${p.darkTint ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.26)'}; }
+  marker path { fill: ${p.darkTint ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.26)'}; stroke: ${p.edge}; }
   .mouth { stroke: ${p.darkTint ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'}; }
 
   /* radii follow the design system's shape language */
@@ -1410,6 +1709,71 @@ ${kanbanRules}
   .data-point:nth-of-type(5n+3) circle { fill: ${p.sys.orange}; }
   .data-point:nth-of-type(5n+4) circle { fill: ${p.sys.pink}; }
   .data-point:nth-of-type(5n+5) circle { fill: ${p.sys.purple}; }
+
+  /* C4: element fills/borders come from the c4 config (inline !important),
+     but C4 hard-codes a white label colour; repaint only the text so the
+     label background rectangles keep their current paint. */
+  .c4-shape .label text,
+  .c4-shape .label .text-outer-tspan,
+  .c4-shape .label .text-inner-tspan { fill: ${text}; }
+  /* C4 relationship lines, boundary rect and boundary label use a hard-coded
+     #444444 attribute — the only stable hook is the attribute itself. */
+  [stroke="#444444"] { stroke: ${p.edge}; }
+  [fill="#444444"] { fill: ${text}; }
+
+  /* architecture-beta: the built-in service icons carry a hard-coded #087ebf
+     inline background; put the system hue behind the white glyphs. */
+  .architecture-service rect[width="80"] { fill: ${p.sys.blue} !important; }
+
+  /* sankey-beta: node fills are hard-coded attributes from the stock Tableau
+     ramp; cycle the system tints instead (links stay neutral via config). */
+  .nodes g.node:nth-of-type(6n+1) rect { fill: ${p.tint.blue}; stroke: ${p.sys.blue}; }
+  .nodes g.node:nth-of-type(6n+2) rect { fill: ${p.tint.green}; stroke: ${p.sys.green}; }
+  .nodes g.node:nth-of-type(6n+3) rect { fill: ${p.tint.orange}; stroke: ${p.sys.orange}; }
+  .nodes g.node:nth-of-type(6n+4) rect { fill: ${p.tint.pink}; stroke: ${p.sys.pink}; }
+  .nodes g.node:nth-of-type(6n+5) rect { fill: ${p.tint.purple}; stroke: ${p.sys.purple}; }
+  .nodes g.node:nth-of-type(6n+6) rect { fill: ${p.tint.teal}; stroke: ${p.sys.teal}; }
+  .node-labels text { fill: ${text}; }
+
+  /* radar-beta: the stock graticule is a filled grey disk and the curves use
+     their pastel cScale tint for the stroke as well; both need correcting. */
+  .radarGraticule { fill: none; stroke: ${p.separator}; stroke-width: 1px; }
+${radarRules}
+
+  /* journey: the stock section/task borders are a hard-coded #666666 */
+  .journey-section, [class*="task-type-"] { stroke: ${p.separator}; }
+  /* journey faces: the eyes are hard-coded #666 circles */
+  circle[fill="#666"], circle[stroke="#666"] { fill: ${secondary}; stroke: ${secondary}; }
+
+  /* gantt: the d3 axis writes stroke="currentColor" on the grid tick lines, so
+     the gridColor theme variable never wins; key the hairlines to the palette */
+  .grid .tick line, .grid path.domain { stroke: ${p.separator}; }
+
+  /* sankey: the stock link layer blends with multiply, which turns a neutral
+     link colour into near-black on the dark card; normal blending keeps the
+     flow bands visible in both schemes */
+  .links .link { mix-blend-mode: normal !important; }
+
+  /* sequence autonumber discs: the stock text font is sans-serif */
+  .sequenceNumber { font-family: ${FONT_STACK}; }
+
+  /* block: labelled edges carry a hard-coded dark label stroke */
+  .block .edgeLabel rect { fill: ${p.card}; stroke: ${p.separator}; }
+  .block .edgeLabel text, .block .edgeLabel span { fill: ${text}; }
+
+  /* gitGraph: HIGHLIGHT commits are painted with primaryColor for the inner
+     square (a pastel with no edge), which reads like an empty hole next to the
+     vivid branch commits. Give the square the accent edge and a quiet outer
+     footprint. */
+  .commit-highlight-outer { fill: ${p.card}; stroke: ${p.separator}; }
+  .commit-highlight-inner { fill: ${p.tint.blue}; stroke: ${p.sys.blue}; stroke-width: 1px; }
+
+  /* treemap: mermaid sizes leaf labels from the cell (38px base for a small
+     tree), which reads like a poster next to every other 12-14px diagram.
+     Cap label/value sizes; the renderer's inline font-size loses to this
+     !important rule, and its fit loop then measures the capped size. */
+  .treemapLabel { font-size: 20px !important; }
+  .treemapValue { font-size: 13px !important; }
   `
 }
 
@@ -1447,6 +1811,8 @@ export const APPLE_SCHEME_CONFIG = {
       sectionColours: ['#1D1D1F'],
       actorColours: ['#B7DAFF', '#B3ECCB', '#FFD9A8', '#FFC2D0', '#E4C6F7', '#B7E7EF'],
     },
+    c4: c4ConfigFor(APPLE_LIGHT),
+    sankey: { linkColor: APPLE_LIGHT.edge },
   },
   dark: {
     journey: {
@@ -1454,6 +1820,8 @@ export const APPLE_SCHEME_CONFIG = {
       sectionColours: ['#F5F5F7'],
       actorColours: ['#2A4E7A', '#1F5C3B', '#6B4A22', '#6B3145', '#553572', '#215C66'],
     },
+    c4: c4ConfigFor(APPLE_DARK),
+    sankey: { linkColor: APPLE_DARK.edge },
   },
 }
 
@@ -1516,6 +1884,7 @@ const strongOnTint = (color, mode) => (mode === 'dark' ? mix(color, '#FFFFFF', 0
 /** Turn a design system's solid palette into the factory's full palette. */
 const buildPalette = ({ mode, surface, separator, label, edge, hues, radius = 8 }) => {
   const card = mode === 'dark' ? '#1B1B1C' : '#F9FAFB'
+  const rawHues = { ...hues }
   const tint = {}
   const tintAlt = {}
   const tintWeight = mode === 'dark' ? 0.3 : 0.16
@@ -1531,6 +1900,13 @@ const buildPalette = ({ mode, surface, separator, label, edge, hues, radius = 8 
     tint[name] = mix(color, card, tintWeight)
     tintAlt[name] = mix(color, card, tintAltWeight)
   }
+  // Yellow is luminous on purpose, so the readability walk above pushes it
+  // through several black mixes and turns it into a muddy olive. Notes, git
+  // tags and yellow timeline bands should keep the design system's own warm
+  // hue: derive their pastel/edge from the untouched token instead.
+  const rawYellow = rawHues.yellow ?? hues.yellow
+  const yellowTint = mix(rawYellow, card, mode === 'dark' ? 0.3 : 0.16)
+  const yellowEdge = mode === 'dark' ? mix(rawYellow, '#FFFFFF', 0.85) : mix(rawYellow, '#000000', 0.82)
   const deepBlue = mix(hues.blue, '#000000', mode === 'dark' ? 0.35 : 0.22)
   const onDeep = contrast(deepBlue, '#FFFFFF') >= 4.5 ? '#FFFFFF' : '#111111'
   const activeBase = mode === 'dark' ? hues.blue : deepBlue
@@ -1559,16 +1935,62 @@ const buildPalette = ({ mode, surface, separator, label, edge, hues, radius = 8 
     softBg: surface,
     radius,
     darkTint: mode === 'dark',
+    rawHues,
+    yellowTint,
+    yellowEdge,
+    vividYellow: rawYellow,
   }
 }
 
 /** Journey paints its bands from config arrays, not theme variables. */
 const journeyConfigFor = (p) => ({
-  sectionFills: [p.tint.blue, p.tint.green, p.tint.orange, p.tint.pink, p.tint.purple, p.tint.teal, p.tint.yellow],
+  sectionFills: [p.tint.blue, p.tint.green, p.tint.orange, p.tint.pink, p.tint.purple, p.tint.teal, p.yellowTint ?? p.tint.yellow],
   sectionColours: [p.label.primary],
   actorColours: ['blue', 'green', 'orange', 'pink', 'purple', 'teal'].map((name) =>
     mix(p.sys[name], p.card, p.mode === 'dark' ? 0.45 : 0.3)),
 })
+
+/**
+ * A palette-shaped view of the quiet (DSH-native) theme, so the C4 builder can
+ * colour C4 elements without a second code path. Values mirror LIGHT/DARK.
+ */
+function quietPalette(mode) {
+  const dark = mode === 'dark'
+  return {
+    fill: dark ? '#1F1F22' : '#FFFFFF',
+    separator: dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.16)',
+    tint: {
+      purple: dark ? '#23262E' : '#E9EFF8',
+      blue: dark ? '#232427' : '#F5F6F7',
+      green: dark ? '#212427' : '#F1F3F5',
+      orange: dark ? '#25262A' : '#F7F8FA',
+    },
+    sys: {
+      purple: dark ? 'rgba(255,255,255,0.24)' : 'rgba(77,107,254,0.42)',
+      blue: dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.16)',
+      green: dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.14)',
+      orange: dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)',
+    },
+  }
+}
+
+/**
+ * C4 element colours from any palette: internal families get their pastel fill
+ * + solid border, `external_*` elements stay on the neutral surface so "outside
+ * the system" still reads. C4 writes these as inline styles; text is re-painted
+ * to the label colour by themeCSS because C4 hard-codes a white label colour.
+ */
+function c4ConfigFor(p) {
+  const config = {}
+  for (const type of C4_ELEMENT_TYPES) {
+    const hue = C4_HUE[type]
+    config[`${type}_bg_color`] = p.tint[hue]
+    config[`${type}_border_color`] = p.sys[hue]
+    config[`external_${type}_bg_color`] = p.fill
+    config[`external_${type}_border_color`] = p.separator
+  }
+  return config
+}
 
 /** Assemble one variant from a light/dark palette pair. */
 const makeVariant = (light, dark) => ({
@@ -1585,8 +2007,16 @@ const makeVariant = (light, dark) => ({
     },
   },
   schemeConfig: {
-    light: { journey: journeyConfigFor(light) },
-    dark: { journey: journeyConfigFor(dark) },
+    light: {
+      journey: journeyConfigFor(light),
+      c4: c4ConfigFor(light),
+      sankey: { linkColor: light.edge },
+    },
+    dark: {
+      journey: journeyConfigFor(dark),
+      c4: c4ConfigFor(dark),
+      sankey: { linkColor: dark.edge },
+    },
   },
 })
 
@@ -1734,6 +2164,9 @@ export const configForVariant = (scheme, variantName) => {
     ...schemeConfig,
     ...variant.themes[key],
     journey: { ...CONFIG.journey, ...schemeConfig.journey },
+    c4: { ...CONFIG.c4, ...schemeConfig.c4 },
+    sankey: { ...CONFIG.sankey, ...schemeConfig.sankey },
+    architecture: { ...CONFIG.architecture, ...schemeConfig.architecture },
   }
 }
 

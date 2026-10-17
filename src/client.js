@@ -31,13 +31,16 @@
  * 4. Mermaid 11 (UMD, jsDelivr) is fetched once, lazily, only when the first
  *    candidate fence appears. Renders are serialized so a message full of
  *    diagrams cannot block the main thread with parallel work.
- * 5. A wide diagram arrives at the fence's width and would shrink into
- *    unreadable type. The canvas fits it while it fits comfortably and, past
- *    MIN_FIT_SCALE, keeps the type legible and scrolls instead (with a fade at
- *    the edge that clears at the end). Click the diagram — or the zoom control
- *    in the header — to open a full-window viewer: a framed paper on a blurred
- *    mask, a floating toolbar, wheel zoom, drag-to-pan, fit-to-window,
- *    double-click 1:1, arrow keys and Esc.
+ * 5. A diagram is always fit to the card's width: a wide one is scaled down
+ *    until the whole diagram is visible instead of being cropped or scrolled
+ *    sideways; a small-and-short one grows up to MAX_READING_SCALE; a tall one
+ *    keeps 1:1 and lets the card grow taller. The canvas is not a scroll
+ *    container, so the wheel always scrolls the message list even when the
+ *    pointer is over a chart. Readability of a very wide diagram comes from the
+ *    viewer: click the diagram — or the zoom control in the header — to open a
+ *    full-window viewer with a framed paper on a blurred mask, a floating
+ *    toolbar, wheel zoom, drag-to-pan, fit-to-window, double-click 1:1, arrow
+ *    keys and Esc.
  * 6. A render failure is never final. Streaming cuts a fence mid-statement
  *    whenever the model pauses for longer than the settle window, and a
  *    half-written diagram is a parse error, not a user error: the block retries
@@ -96,6 +99,14 @@ const ZOOM_PAD = 40
 const ZOOM_MIN = 0.1
 const ZOOM_MAX = 8
 
+/**
+ * Upper bound of the viewer's fit scale. The full-window viewer is the place
+ * where a small diagram may be magnified to use the window, but a 14px Mermaid
+ * label should never turn into a poster: 2.5x keeps it at about 35px even on a
+ * 1920px-wide window, and normal-sized diagrams never reach the cap.
+ */
+const ZOOM_FIT_MAX = 2.5
+
 /** One press of the viewer's +/- buttons. */
 const ZOOM_STEP = 1.25
 
@@ -116,6 +127,8 @@ const THEME_Z_INDEX = ZOOM_Z_INDEX - 1
 
 /** localStorage key holding the reader's diagram theme choice. */
 const THEME_STORAGE_KEY = `${PLUGIN_ID}:theme`
+/** Local layout preference: 'scroll' (default) or 'grow'. */
+const FIT_STORAGE_KEY = `${PLUGIN_ID}:fit-mode`
 
 /**
  * Diagram themes offered in the card header, in reading order. The system names
@@ -138,6 +151,22 @@ const THEME_CHOICES = [
  * Storage can be unavailable (private mode, disabled cookies), in which case
  * the plugin simply starts from `THEME_VARIANT`.
  */
+const storedFitMode = () => {
+  try {
+    return window.localStorage.getItem(FIT_STORAGE_KEY) === 'grow' ? 'grow' : 'scroll'
+  } catch {
+    return 'scroll'
+  }
+}
+
+const storeFitMode = (mode) => {
+  try {
+    window.localStorage.setItem(FIT_STORAGE_KEY, mode)
+  } catch {
+    /* storage unavailable: the choice lasts for this session */
+  }
+}
+
 const storedTheme = () => {
   try {
     const value = window.localStorage.getItem(THEME_STORAGE_KEY)
@@ -157,12 +186,20 @@ const storeTheme = (variant) => {
 }
 
 /**
- * The smallest scale a diagram may be shrunk to inside the chat card. Mermaid
- * draws at 16px by default and every diagram wider than the card would
- * otherwise shrink until its labels stop being readable. Past this floor the
- * diagram keeps its size and the canvas scrolls instead.
+ * Largest upscale the card applies to a diagram that already fits. 1.5x keeps
+ * a 14px Mermaid label at 21px — larger than body text, still readable as a
+ * figure; filling the card would need 2.5-4.7x and turn the card into a poster,
+ * which is what the full-window viewer is for.
  */
-const MIN_FIT_SCALE = 0.85
+const MAX_READING_SCALE = 1.5
+
+/**
+ * Diagrams naturally taller than this keep their 1:1 size and let the card grow
+ * taller instead of being magnified: a 14px label on a long sequence/C4 diagram
+ * does not need to become a poster, and the page can scroll past the card.
+ * Everything else may grow up to MAX_READING_SCALE.
+ */
+const TALL_DIAGRAM_HEIGHT = 600
 
 /** Attribute marking the body we hide while the diagram is shown. */
 const HIDDEN = 'data-dsh-mermaid-hidden'
@@ -188,6 +225,7 @@ const ICONS = {
   check: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1"><path d="M2.5 8.5L6 12L13.5 4.5" stroke="currentColor"/></svg>',
   palette: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1"><path d="M8 1.75a6.25 6.25 0 1 0 0 12.5c.9 0 1.55-.7 1.55-1.55 0-.4-.15-.77-.42-1.05a1.48 1.48 0 0 1-.43-1.04c0-.84.68-1.52 1.52-1.52h1.32a3.92 3.92 0 0 0 3.71-5.2C14.4 2.7 11.6 1.75 8 1.75Z" stroke="currentColor"/><circle cx="5.1" cy="6.1" r=".85" fill="currentColor" stroke="none"/><circle cx="8.1" cy="4.6" r=".85" fill="currentColor" stroke="none"/><circle cx="4.3" cy="9.3" r=".85" fill="currentColor" stroke="none"/></svg>',
   close: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1"><path d="M2.5 2.5L13.5 13.5" stroke="currentColor"/><path d="M13.5 2.5L2.5 13.5" stroke="currentColor"/></svg>',
+  layout: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="1.5" width="11" height="13" rx="2" stroke="currentColor"/><path d="M8 4.25v3M8 8.75v3M6.1 6.15 8 4.25l1.9 1.9M6.1 9.85 8 11.75l1.9-1.9" stroke="currentColor"/></svg>',
   plus: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1"><path d="M8 2.5V13.5" stroke="currentColor"/><path d="M2.5 8H13.5" stroke="currentColor"/></svg>',
   minus: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1"><path d="M2.5 8H13.5" stroke="currentColor"/></svg>',
   warning: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M6.87 2.6a1.33 1.33 0 0 1 2.26 0l5.34 9.33A1.33 1.33 0 0 1 13.33 14H2.67a1.33 1.33 0 0 1-1.14-2.07Z" stroke="currentColor"/><path d="M8 6v3m0 2.33h.01" stroke="currentColor"/></svg>',
@@ -242,6 +280,8 @@ const DICT = {
     zoomHint: 'Scroll to zoom · Drag to pan · Esc to close',
     theme: 'Theme',
     themeNeutral: 'dsh neutral',
+    layoutGrowAction: 'Full expand: the card follows the diagram height',
+    layoutScrollAction: 'Scroll container: tall diagrams scroll inside the card',
     loadFailed: 'Mermaid failed to load',
     loadFailedNote: 'The diagram engine could not be fetched. Check the network and try again.',
     renderFailed: 'Mermaid syntax error',
@@ -262,6 +302,8 @@ const DICT = {
     zoomHint: '滚轮缩放 · 拖拽平移 · Esc 关闭',
     theme: '主题',
     themeNeutral: 'dsh 中性',
+    layoutGrowAction: '完整展开：卡片随图变高',
+    layoutScrollAction: '滚动容器：高图在卡片内滚动',
     loadFailed: 'Mermaid 加载失败',
     loadFailedNote: '图表引擎没能加载，请检查网络后重试。',
     renderFailed: '图表语法有误',
@@ -357,9 +399,14 @@ export default {
       viewer: null,
       /** the diagram theme variant in use (persisted per reader) */
       variant: storedTheme() ?? THEME_VARIANT,
+      /** card layout: 'scroll' caps tall diagrams, 'grow' lets the card grow */
+      fitMode: storedFitMode(),
       /** the shared theme menu, built on first open */
       menu: null,
     }
+
+    // The layout preference is global; the canvas CSS keys off this attribute.
+    document.documentElement.dataset.dshMermaidFit = state.fitMode
 
     // ---- interface copy -------------------------------------------------
     // The locale service is resolved lazily, not once here. Client modules
@@ -690,25 +737,30 @@ export default {
       /* The card itself is the surface — no second box inside it. */
       .dsh-mermaid-canvas {
         display: block;
-        overflow: auto;
-        max-height: min(900px, 85vh);
+        /* NOT a scroll container: the diagram is always pinned to the column
+           width and a tall one simply makes the card taller. A scrollable
+           inner box would swallow wheel events over the diagram and stop the
+           message list from scrolling while the pointer is on a chart. */
         padding: 6px 22px 20px;
-        overscroll-behavior: contain;
       }
       .dsh-mermaid-canvas[hidden] { display: none !important; }
+      /* Layout preference (header button, persisted): the default caps tall
+         diagrams and lets them scroll inside the card; "grow" lets the card
+         follow the diagram height instead (no nested scrollbar, the page
+         scrolls over it). Toggle via the header's layout button. */
+      html[data-dsh-mermaid-fit='scroll'] .dsh-mermaid-canvas {
+        max-height: min(900px, 85vh);
+        overflow: auto;
+        overscroll-behavior: auto;
+      }
       .dsh-mermaid-canvas svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
-      /* A diagram that would be shrunk below MIN_FIT_SCALE keeps its size and
-         scrolls instead: unreadable miniatures are worse than a scrollbar.
-         The width lives on the canvas so mermaid's own inline max-width cap is
-         only overridden in this state. */
-      .dsh-mermaid-canvas.dsh-mermaid-overflow svg {
-        width: var(--dsh-mermaid-natural-width);
+      /* fitReading pins the width whenever the diagram has to scale: wide ones
+         shrink to the column, small-and-short ones grow a little. Tall
+         diagrams keep natural size and grow the card instead. */
+      .dsh-mermaid-canvas.dsh-mermaid-fit svg {
+        width: var(--dsh-mermaid-fit-width);
         max-width: none !important;
         height: auto !important;
-      }
-      .dsh-mermaid-canvas.dsh-mermaid-overflow:not(.dsh-mermaid-at-end) {
-        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
-        mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
       }
       .dsh-mermaid-canvas.dsh-mermaid-zoomable { cursor: zoom-in; }
       @keyframes dsh-mermaid-ink { from { opacity: 0; } }
@@ -1059,10 +1111,12 @@ export default {
     }
 
     /**
-     * Keep a diagram at a readable size: fit it into the card while it still
-     * fits comfortably, otherwise keep MIN_FIT_SCALE and let the viewport
-     * scroll. Called after every render, after the source view returns, and
-     * whenever the card's width changes.
+     * Fit a diagram to the card: a wide one is scaled down to the canvas width
+     * (the stylesheet's `max-width:100%` does the shrinking), a small one is
+     * magnified up to MAX_READING_SCALE inside the canvas' height budget. The
+     * whole diagram is always visible; detail comes from the viewer. Called
+     * after every render, after the source view returns, and whenever the
+     * card's width changes.
      */
     const fitReading = (record) => {
       const svg = record.canvas.querySelector('svg')
@@ -1070,20 +1124,50 @@ export default {
       const size = naturalSize(svg)
       if (!(size.width > 0) || !(size.height > 0)) return
       const style = getComputedStyle(record.canvas)
-      const available = record.canvas.clientWidth
-        - (Number.parseFloat(style.paddingLeft) || 0)
-        - (Number.parseFloat(style.paddingRight) || 0)
-      if (!(available > 0)) return
-      const overflow = available / size.width < MIN_FIT_SCALE
-      record.canvas.classList.toggle('dsh-mermaid-overflow', overflow)
-      if (overflow) {
-        // The class carries the width; mermaid's own inline `max-width` cap is
-        // only overridden for this state (see the stylesheet). Overflowing
-        // diagrams keep their full size: a scrollbar costs less than shrinking
-        // 14px labels below legibility.
-        record.canvas.style.setProperty('--dsh-mermaid-natural-width', `${Math.round(size.width)}px`)
+      const padX = (Number.parseFloat(style.paddingLeft) || 0)
+        + (Number.parseFloat(style.paddingRight) || 0)
+      const available = record.canvas.clientWidth - padX
+      if (!(available > 0)) {
+        // Hidden ancestor (collapsed surface/tab): do not persist a stale size.
+        record.fitKey = undefined
+        return
+      }
+      // Width is the only axis the card ever fits to: a wide diagram shrinks
+      // to the column, and a tall one just makes the card taller (no inner
+      // scroll container, so wheel events always reach the message list).
+      const fit = available / size.width
+      // Only small-and-short diagrams grow; a long sequence/C4 diagram keeps
+      // 1:1 instead of becoming a poster.
+      const maxScale = size.height > TALL_DIAGRAM_HEIGHT ? 1 : MAX_READING_SCALE
+      const scale = Math.min(fit, maxScale)
+
+      // Setting the svg width changes the canvas height, which wakes the
+      // ResizeObserver; this key makes the second pass a no-op instead of a
+      // write/measure loop.
+      const key = `${Math.round(available)}|${Math.round(size.width)}|${Math.round(size.height)}`
+      if (record.fitKey === key) return
+      record.fitKey = key
+
+      const sized = Math.abs(scale - 1) > 0.001
+      record.canvas.classList.toggle('dsh-mermaid-fit', sized)
+      if (sized) {
+        record.canvas.style.setProperty('--dsh-mermaid-fit-width', `${Math.max(1, Math.round(size.width * scale))}px`)
       } else {
-        record.canvas.style.removeProperty('--dsh-mermaid-natural-width')
+        // Natural size already matches the column: let mermaid's own
+        // `max-width` cap size it, which keeps resizes clean.
+        record.canvas.style.removeProperty('--dsh-mermaid-fit-width')
+      }
+    }
+
+    /** Flip the global layout preference and refresh every card's chrome. */
+    const toggleFitMode = () => {
+      state.fitMode = state.fitMode === 'scroll' ? 'grow' : 'scroll'
+      storeFitMode(state.fitMode)
+      document.documentElement.dataset.dshMermaidFit = state.fitMode
+      for (const record of state.records.values()) {
+        // A new layout starts at the top of the diagram either way.
+        record.canvas.scrollTop = 0
+        applyView(record)
       }
     }
 
@@ -1138,6 +1222,10 @@ export default {
         record.copy.setAttribute('aria-label', copyLabel)
       }
       record.copy.hidden = false
+      const layoutTip = state.fitMode === 'scroll' ? t('layoutGrowAction') : t('layoutScrollAction')
+      record.layout.dataset.tip = layoutTip
+      record.layout.setAttribute('aria-label', layoutTip)
+      record.layout.setAttribute('aria-pressed', String(state.fitMode === 'scroll'))
       record.zoom.dataset.tip = t('zoom')
       record.zoom.setAttribute('aria-label', t('zoom'))
       const themeTip = `${t('theme')} · ${themeLabel(state.variant)}`
@@ -1197,6 +1285,7 @@ export default {
       kind.textContent = LANGUAGE
       const tools = document.createElement('div')
       tools.className = 'dsh-mermaid-tools'
+      const layout = toolButton('layout', ICONS.layout)
       const theme = toolButton('theme', ICONS.palette)
       theme.setAttribute('aria-haspopup', 'menu')
       theme.setAttribute('aria-expanded', 'false')
@@ -1204,7 +1293,7 @@ export default {
       const source = toolButton('source', ICONS.source)
       const zoom = toolButton('zoom', ICONS.expand)
       zoom.hidden = true
-      tools.append(theme, copy, source, zoom)
+      tools.append(layout, theme, copy, source, zoom)
       head.append(kind, tools)
 
       const canvas = document.createElement('div')
@@ -1245,6 +1334,7 @@ export default {
         head,
         kind,
         tools,
+        layout,
         theme,
         copy,
         source,
@@ -1275,6 +1365,7 @@ export default {
         canvasObserver: undefined,
       }
       copy.addEventListener('click', () => copySource(record))
+      layout.addEventListener('click', () => toggleFitMode())
       theme.addEventListener('click', () => openThemeMenu(theme))
       source.addEventListener('click', () => {
         record.showSource = !record.showSource
@@ -1285,11 +1376,6 @@ export default {
       canvas.addEventListener('click', () => {
         if (record.done === true && !record.showSource) openViewer(record)
       })
-      // The overflow fade clears at the end so the rightmost nodes stay clean.
-      canvas.addEventListener('scroll', () => {
-        const atEnd = canvas.scrollLeft + canvas.clientWidth >= canvas.scrollWidth - 2
-        canvas.classList.toggle('dsh-mermaid-at-end', atEnd)
-      }, { passive: true })
       holder.append(head, canvas, error)
       block.append(holder)
       state.records.set(block, record)
@@ -1333,11 +1419,15 @@ export default {
       return { width: Math.max(1, rect.width), height: Math.max(1, rect.height - top), top }
     }
 
-    /** The scale that shows the whole diagram, never magnifying a small one. */
+    /**
+     * The scale that shows the whole diagram. Small diagrams may be magnified
+     * up to ZOOM_FIT_MAX so "fit window" actually uses the window; larger ones
+     * are still shrunk to fit exactly as before.
+     */
     const fitScaleOf = (viewer) => {
       const view = viewportOf(viewer)
       return Math.min(
-        1,
+        ZOOM_FIT_MAX,
         Math.max(1, view.width - 2 * ZOOM_PAD) / viewer.width,
         Math.max(1, view.height - 2 * ZOOM_PAD) / viewer.height,
       )
@@ -2069,6 +2159,7 @@ export default {
         }
         for (const el of document.querySelectorAll(`[${HIDDEN}]`)) el.removeAttribute(HIDDEN)
         for (const el of document.querySelectorAll(`[${BANNER_HIDDEN}]`)) el.removeAttribute(BANNER_HIDDEN)
+        delete document.documentElement.dataset.dshMermaidFit
       }
     }, `${PLUGIN_ID}: observer`)
 

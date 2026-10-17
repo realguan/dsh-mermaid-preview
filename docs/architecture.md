@@ -203,15 +203,18 @@ paint: loadMermaid → configure（configForVariant(scheme, variant)）→ merma
 ### 7.1 卡片内尺寸策略
 
 mermaid 渲染出的 SVG 自带 `width="100%"` 和 `style="max-width: <自然宽>px"`——它被
-设计成**填满容器**。卡片本身只有一栏宽，于是宽图会被等比压小，节点文字小到看不清。
-卡片内的第一层策略是：
+设计成**填满容器**。卡片本身只有一栏宽。卡片内的缩放策略是：
 
-- 能放下就按容器宽度适配（不放大）。
-- 适配比例会低于 `MIN_FIT_SCALE = 0.85` 时，**保持原始尺寸**改为横向滚动，右缘用
-  mask 渐隐提示（滚到末尾后消失）；不把 14px 标签压成 9px。
-- 高度上限 `min(900px, 85vh)`，超出纵向滚动。
+- **永远按卡片宽度完整显示**：比容器宽的图缩小到整图可见，不裁切、不横向滚动；
+  所有图型同一规则，没有按图型调参。
+- **高度布局由读者选**（头部布局按钮，localStorage 持久化）：
+  `scroll`（默认）给画布 `max-height: min(900px, 85vh)` + `overflow:auto`；`grow`
+  不设高度上限，让卡片随图变高。两种模式只影响画布 CSS，宽度适配逻辑一致。
+- 自然高 >`TALL_DIAGRAM_HEIGHT`(600px) 的图保持 1:1；≤600px 的小图最多放大到
+  `MAX_READING_SCALE = 1.5`；放大用 `--dsh-mermaid-fit-width` + `!important`
+  解开 mermaid 的 shrink-only inline `max-width`。
 - `ResizeObserver` 监听画布宽度，侧栏/字号/窗口变化后重新测量。
-- 全窗口查看器负责「一次看全」的诉求。
+- 「一次看全 + 看得清」的诉求由全窗口查看器负责（fit 时会把小图放大到填窗）。
 
 ### 7.2 查看器
 

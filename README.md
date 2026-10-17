@@ -90,16 +90,21 @@ dsh --profile web --dump-config | grep -A2 mermaid-preview
   两行头部
 - 🧾 **图表不是代码**：卡片头部左侧显示图表类型（`flowchart` / `sequenceDiagram` /
   `gantt` …），而不是无意义的「代码块」标签
-- 📐 **宽图不缩成蚂蚁**：能放下就适配，放不下就保持原尺寸横向滚动（右缘渐隐提示，
-  滚到末尾消失）；点击图表或头部放大按钮进入全窗口查看器：模糊遮罩、悬浮工具条、
-  滚轮缩放、拖拽平移、适应窗口 / 1:1、`Esc` 关闭（见
+- 📐 **图会跟着卡片走**：所有图型都按卡片宽度**完整适配**——宽图等比缩小到整图
+  可见（不裁切、不横向滚动），小图最多放大到 1.5×（图示比正文略大、不喧宾夺主）。
+  卡片布局可切换：头部新增布局按钮，默认**滚动容器**（高图限高、卡片内滚动），
+  点一下变成**完整展开**（卡片随图变高，滚轮直接滚文档），选择会记住。点击图表或
+  头部放大按钮进入全窗口查看器：模糊遮罩、悬浮工具条、滚轮缩放、拖拽平移、
+  **适应窗口（小图会放大到填满窗口，上限 2.5×）** / 1:1、`Esc` 关闭（见
   [architecture.md](./docs/architecture.md) §7）
 - 🛟 **失败兜底不吓人**：CDN 不可达或语法错误时保留源码，给一条安静的提示
   （一句人话 + 可展开的解析器详情），不再是整屏红字；文本一改就自动重试
 - 🧹 **干净卸载**：样式、观察器、定时器、脚本、注入节点全部随插件 fiber 清理
 - 🧪 **可自检**：`npm run check` 校验语法、manifest、产物一致性、识别用例与版本一致
-- 📚 **多图型**：flowchart / sequenceDiagram / classDiagram / stateDiagram-v2 /
-  gantt / pie / erDiagram / journey / mindmap / gitGraph / timeline 等
+- 📚 **全部 23 种图型都吃主题**：flowchart / sequenceDiagram / classDiagram /
+  stateDiagram-v2 / gantt / pie / erDiagram / journey / mindmap / gitGraph /
+  timeline / quadrantChart / requirementDiagram / 各类 C4 / sankey / block /
+  packet / architecture / radar / treemap / kanban / xychart 等（含 11.x beta 图型）
 
 ## 本地体验独立演示页（无需 dsh）
 
@@ -192,10 +197,10 @@ docs/compatibility.md           DSH 版本兼容性声明与逐版本证据
   信息收在「查看详情」里；之后围栏内容一变，提示立即消失并重新渲染。
 - **非 mermaid 围栏被渲染成图**：识别是内容驱动的，首行恰好是 `graph TD` 之类语句
   的围栏会被接管；把首行改成非 mermaid 语句即可。
-- **图太宽，字看不清**：卡片会保持可读尺寸并允许横向滚动（右缘有渐隐提示）；点图表
-  或卡片头部的放大按钮，进入全窗口查看器。默认适应窗口，滚轮缩放（以光标为锚点）、
-  按住拖拽平移，双击在适应窗口与 1:1 之间切换，`0` 复位，`Esc` 关闭。查看器是 SVG
-  的副本，原代码块不受影响。
+- **图太宽，字看不清**：卡片会把整图缩放到卡片宽度完整显示（不裁切）；图缩得较小时
+  点图表或卡片头部的放大按钮，进入全窗口查看器。默认适应窗口，滚轮缩放（以光标为
+  锚点）、按住拖拽平移，双击在适应窗口与 1:1 之间切换，`0` 复位，`Esc` 关闭。查看器
+  是 SVG 的副本，原代码块不受影响。
 - **图表颜色和我之前看到的不一样了**：0.5.0 起默认使用 Radix Colors 图表主题，不再使用
   mermaid 默认调色板；旧的薰衣草紫节点不会再有。点任意图表卡片头部的调色板按钮换风格，
   选择会立刻应用并记住；想把默认值换掉则改 `src/theme.js` 顶部的 `THEME_VARIANT`

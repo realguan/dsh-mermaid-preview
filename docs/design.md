@@ -18,8 +18,11 @@
 3. **多彩但可读。** 默认主题走 Radix Colors（作者选择）：节点粉彩底 + 同色系高饱和
    描边，数据类图表用 vivid 调色板；连线保持中性灰、文字保持 label 色，颜色只做信息
    分层，不把所有元素都染成高饱和。
-4. **可读性优先于「塞进一屏」。** 图放得下就适配；放不下就保持原尺寸并横向滚动，
-   绝不把 14px 的文字压成 9px 的蚂蚁。全窗口查看器负责一次看全。
+4. **完整可见优先，布局交给读者。** 图永远按卡片宽度完整适配：宽图等比缩小到
+   整图可见（不裁切、不横向滚动），小图最多放大 1.5×。高的图有两种布局，头部
+   布局按钮切换并记住：**滚动容器（默认）** 限高、卡片内滚动；**完整展开** 让
+   卡片随图变高、滚轮直接滚文档。需要看清细节时打开全窗口查看器（fit 会把小图
+   放大到填窗，上限 2.5×）。
 5. **失败也要体面。** 一句人话 + 可展开的技术详情，而不是把解析器内部错误倒满屏幕。
 6. **动效服务于理解。** 150–200ms 的淡入/位移，尊重 `prefers-reduced-motion`；
    不为炫技加弹跳、发光或渐变。
@@ -119,6 +122,28 @@ export const THEME_VARIANT = 'radix'   // 或 apple / github / carbon / atlassia
 - Journey 的分区底色是 **config 数组**（不是 theme variable），所以放在
   `SCHEME_CONFIG` 里随变体和明暗切换。
 
+### 3.1.1 全部 23 种示例图型的覆盖（0.5.1）
+
+mermaid 11.x 的 beta 图型与 C4 各有自己的硬编码路径，只写 `themeVariables` 不够：
+
+- `block` 的节点画在 `g.block` 下，节点循环必须同时匹配 `.nodes g.node` 与
+  `.block g.node`；带标签的边要补 `.block .edgeLabel`。
+- `packet` 的 cell/label/title 颜色全部硬编码（`#efefef`/`black`），只能用
+  themeCSS 接管 `.packetBlock` 等类。
+- **C4** 的元素颜色由 renderer 写成 inline `!important`，**只能**从 `c4` 图型
+  config 的 `*_bg_color`/`*_border_color` 进入；标签白色也是 inline，但可见字形在
+  `<tspan>` 上，themeCSS 打 tspan 的 `fill` 即可；关系线/边界框的 `#444444` 是
+  presentation attribute，用属性选择器接管。C4 字体来自 `c4.*FontFamily`，全部
+  换成 `FONT_STACK`。
+- `sankey` 的节点色是 d3 Tableau10 写进 `<rect fill>` 属性，themeCSS 的
+  `nth-of-type` 循环可以覆盖（CSS 优先于 presentation attribute）；流带改用
+  `sankey.linkColor` 的中性线色，并关掉暗色下不可见的 `multiply` 混合。
+- `architecture` 的边/分组框是 `arch*` themeVariables（此前未设，落到 `#777`/
+  `#000`），内置服务图标的 `#087ebf` 背景只能用 `!important` 覆盖；
+  `radar` 的 graticule/curve 走 `themeVariables.radar` + themeCSS；
+  `journey` 的表情眼睛、`gantt` 的 `currentColor` 网格线、`sequence` 的序号字体
+  也都在 themeCSS 里收口。
+
 ### 3.2 字体必须是字面量
 
 mermaid 测量 HTML label 时用的是挂在 `<body>` 下的临时 SVG（继承宿主正文字体），
@@ -149,9 +174,20 @@ mermaid 测量 HTML label 时用的是挂在 `<body>` 下的临时 SVG（继承�
   按钮（复制源码 / 显示源码 / 放大），hover 出 tooltip，键盘用 1px focus ring；
   复制成功时图标变 Apple 绿。
 - 图表不套第二层背景/边框：卡片本身就是画布。
-- **尺寸策略**：先按容器宽度适配（`max-width:100%`，不放大）；当适配比例低于
-  `MIN_FIT_SCALE = 0.85` 时改为保持原始尺寸、横向滚动，右缘用 CSS mask 渐隐提示，
-  滚到头后渐隐消失。高度上限 `min(900px, 85vh)`，超出时纵向滚动。
+- **尺寸策略：宽度永远完整适配；高度按读者选的布局处理。** 比容器宽的图缩到整图
+  可见（不裁切、不横向滚动，所有图型同一规则；treemap 996px、packet 1026px、
+  timeline 1252px 在 ~700px 卡片里分别缩到约 72% / 70% / 57%）。高度有两种模式，
+  由头部布局按钮切换、写入 `localStorage`（`dsh-mermaid-preview:fit-mode`）：
+  - `scroll`（默认）：画布 `max-height: min(900px, 85vh)` + `overflow:auto`，
+    高图在卡片内滚动；
+  - `grow`：不设高度上限、画布不是滚动容器，高图让卡片变高，滚轮事件直接交给
+    消息列表。
+  两种模式都只有宽度方向的显式缩放：自然高 >600px 的图保持 1:1，≤600px 的小图
+  最多放大到 `MAX_READING_SCALE = 1.5`；放大后的宽度写回
+  `--dsh-mermaid-fit-width`，与 mermaid 的 shrink-only inline `max-width` 用
+  `!important` 解开，`fitKey` 防止 ResizeObserver 写读回环。treemap 的叶子标签由
+  mermaid 从 38px 起自适应，主题里统一压到 20px（缩放后约 14px），避免它比其他
+  图型大一号。
 - 明暗切换、容器宽度变化（侧栏、字号、窗口）都会重新测量（`ResizeObserver`）。
 - 渲染完成时 160ms 淡入；`prefers-reduced-motion` 下取消。
 
@@ -163,7 +199,9 @@ mermaid 测量 HTML label 时用的是挂在 `<body>` 下的临时 SVG（继承�
 - 工具条：顶部居中的悬浮胶囊（彩色类型标签 + − / 百分比 / + / 适应窗口 / 关闭），
   28px 命中区、8px 圆角、`--dsw-elevation-prominent`；底部是「滚轮缩放 · 拖拽平移 ·
   Esc 关闭」的安静提示胶囊，窄屏隐藏。
-- 默认适应窗口；滚轮以指针为锚点缩放，拖拽平移，双击适应 ↔ 1:1，方向键平移，
+- 默认适应窗口，且**小图会被放大到填满窗口**（上限 `ZOOM_FIT_MAX = 2.5`；大图仍
+  照旧缩小）：`817×603` 下 block ≈143%、`1440×900` ≈235%，双击 1:1 对小图才真正
+  可见。滚轮以指针为锚点缩放，拖拽平移，双击适应 ↔ 1:1，方向键平移，
   `+`/`-`/`0`、`Esc`。焦点进入关闭按钮，关闭后归还。
 - 打开/关闭有 160–180ms 的淡入与工具条位移，reduced-motion 下取消。
 
@@ -184,14 +222,25 @@ mermaid 测量 HTML label 时用的是挂在 `<body>` 下的临时 SVG（继承�
 
 - `npm run check`：语法、manifest、产物同步、识别用例、mermaid 版本钉住。
 - 视觉验证在「dsh 设计令牌复刻的对话界面」里跑**真实插件产物**，覆盖明暗、默认/
-  宽图/失败/查看器/源码视图，并对 14 种图型检查：无裁切标签、无 mermaid 原生
-  薰衣草紫、无衬线字体、有效字号 ≥ 11px、14/14 在 660px 列内 1:1 显示；
-  Apple 变体额外做对比度审计（0 低对比标签）。
+  宽图/失败/查看器/源码视图；0.5.1 起对 **23 种图型**（light + dark，8 套变体
+  抽样）检查：无裁切标签、无 mermaid 原生默认色（`#ECECFF`/`#efefef`/Tableau10/
+  C4 原色等）、无意外衬线字体、有效字号 ≥ 11px；图形自适应（1.5× 上限）与查看器
+  适应窗口（2.5× 上限）也在真实插件产物上回归。
 - 独立演示页（`npm run demo`）直接 import `src/theme.js`，是随手看主题效果的最短路径。
 
 ## 8. 已知边界
 
-- 极宽/极长的图仍然需要滚动或放大查看；这是可读性的取舍，不是主题能解决的。
+- 极宽的图缩到列宽后字会偏小，需要看清时用查看器；极长的图会让卡片变长（页面
+  正常滚动），这是「完整可见、无内嵌滚动」的代价。放大有上限（卡片 1.5×、查看器
+  2.5×），填满宽卡片需要 2.5–4.7×，会把图示变成海报。
+- C4 的 label 白色是 renderer 写死的 inline `!important`：插件依赖 tspan 的
+  `fill` 规则上墨，没有替换任何 React 节点；mermaid 若改变 C4 label 结构，主题会
+  退化为白字，需要重新校准选择器。
+- 部分图型的颜色是 mermaid 写死的 inline 属性（sankey 节点、packet cell 等）：
+  themeCSS 覆盖的是**渲染结果**，SVG 源码里的原始属性仍在，复制源码不受影响。
+- gantt 的标签在「任务条宽度 < 文字宽度」时会被 mermaid 移到条外（短任务、里程碑
+  常见），这是上游布局规则；插件只保证条外标签使用可读的 outside 色，不再沿用
+  条内 active/done/crit 文字色。想减少外置可缩小 gantt 字号或拉宽图表。
 - 查看器不做完整焦点陷阱（`Tab` 可能走出弹层）；`Esc`/方向键会被拦下。
 - 查看器里是静态 SVG 副本，`bindFunctions()` 的图内交互只在代码块那份上生效。
 - 节点颜色轮换是装饰性的：`nth-of-type` 顺序是 mermaid 的节点迭代顺序，不是视觉顺序；

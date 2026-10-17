@@ -5,6 +5,78 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-10-17
+
+让图真正「自适应窗口」，并补上新图型与 C4 的主题覆盖。
+
+### Changed
+
+- **卡片内小图会放大。** 以前 mermaid 的 `useMaxWidth` 只缩不放，小于阅读列的图
+  永远停在自然尺寸（756px 卡片里放 290px 的 block 图，左右各空 213px）。现在
+  `fitReading` 对「自然高 ≤600px 且宽度放得下」的小图最多放大到 1.5×（14px 标签
+  → 21px）；宽图缩到列宽，很高的图保持 1:1 让卡片变高。`MAX_READING_SCALE = 1.5`
+  是为了让图示比正文略大，而不是把卡片变成海报。
+- **宽图永远完整显示，不再裁切/横向滚动。** 去掉上一版的「缩放下限」兜底（它会
+  在不同宽度下把 treemap、packet、timeline 等不同图型随机打回裁剪态）：现在所有
+  23 种图型统一按卡片宽度等比缩小到整图可见，只有小图才放大（≤1.5×）。已用真实
+  插件产物做 **23 图型 × 6 种卡片宽度（420/560/710/760/900/1200px）** 回归，
+  0 失败、0 裁切、0 SVG 超出画布。看细节用全窗口查看器；treemap 叶子标签同时从
+  mermaid 的 38px 上限压到 20px，避免字号比正文大一号。
+- **鼠标停在图上也能滚动消息。** 以前画布是内层滚动容器
+  （`max-height` + `overflow:auto` + `overscroll-behavior:contain`），图一高，
+  指针落在图上时滚轮只会试图滚图、不滚文档。现在画布**不再是滚动容器**：高度不设
+  上限、高图让卡片自然变高，滚轮事件始终交给消息列表；自然高 >600px 的图也不再
+  被放大成海报。
+- **卡片布局可切换，默认滚动容器。** 头部新增「布局」按钮：默认 `滚动容器`
+  （高图限高 `min(900px, 85vh)`、卡片内滚动），点一下切到 `完整展开`（卡片随图
+  变高、滚轮直接滚文档），选择写入 `localStorage`
+  （`dsh-mermaid-preview:fit-mode`）并跨刷新保留。两种模式只改画布 CSS，宽度
+  适配规则一致。
+- **全窗口查看器「适应窗口」真的适配窗口。** `fitScaleOf` 不再硬编码
+  `Math.min(1, …)`：小图会放大到填满可用窗口（上限 `ZOOM_FIT_MAX = 2.5`），大图
+  照旧缩小；`817×603` 下 block 从 100% → 143%，`1440×900` 下 235%。双击 1:1 对
+  小图第一次真正有意义。
+
+### Fixed
+
+- **黄色系颜色不再发灰发橄榄。** 设计系统的黄色 token 在「1px 描边可读性」归一化
+  时被反复压黑（`#ffe629` → 橄榄），导致 sequence 的 note、gitGraph 的 tag、
+  timeline/mindmap 的黄色带变成灰褐/橄榄。现在 note / tag / 黄色 cScale / journey
+  第 7 段 / pie 第 8 片改从**原始设计系统色相**生成：粉彩底 + 适度加深的暖色描边。
+- **gitGraph `type: HIGHLIGHT` 提交**不再是“空心浅蓝方块”：补了主题蓝描边和
+  quiet 变体的对应规则。
+- **gantt 条外标签不再是白字。** 当任务条比标签窄时，mermaid 会把标签移到条外
+  （正常行为），但它的元素仍带着条内的 `activeText/doneText/critText` 类，而主题
+  对这些类用了 `!important` 的条内文字色——放到浅色分区带上就成了白字/近乎不可读
+  （例如 active 任务「交互与视觉设计」）。现在 `.taskTextOutsideRight/Left`
+  强制使用 outside 色（浅色 `#60646C` / 深色 `#A8ADB6`），quiet 变体同步。
+- **block-beta 没进入节点循环。** 节点画在 `g.block` 下，而主题的
+  `nth-of-type` 循环只匹配 `.nodes g.node`；现在两个作用域都命中，暗色下不再是
+  白底浅字。
+- **packet-beta 是 mermaid 默认白底黑框。** themeCSS 接管
+  `.packetBlock` / `.packetLabel` / `.packetByte` / `.packetTitle`。
+- **C4Context / C4Container 完全没上主题。** C4 的元素颜色是 renderer 写死的
+  inline `!important`，只能通过 `c4.*_bg_color` / `*_border_color` 配置上色；新增
+  按调色板生成的 c4 配置（person/system/container/component 粉彩 + 中性
+  external），字体全部换成 DSH 字体栈；标签文字用 tspan 规则重新上墨，关系线/
+  边界框的 `#444444` 属性选择器接管。
+- **sankey-beta 的 d3 Tableau10 硬编码色板。** 节点用主题 6 色循环覆盖 SVG
+  属性；流带改为主题中性连线色（`sankey.linkColor`），并关掉暗色下不可见的
+  `mix-blend-mode: multiply`。
+- **architecture-beta / radar-beta / journey / gantt 的残留默认色。** 补
+  `arch*` themeVariables、`themeVariables.radar`（graticule 不再画成亮灰圆盘）、
+  journey 的 section/task 边框与表情眼睛、gantt 的 `currentColor` 网格线；服务
+  图标内置 `#087ebf` 背景换成系统蓝。
+- **sequenceDiagram 序号字体** 不再落到 `sans-serif`。
+
+### Internal
+
+- `src/theme.js`：C4、sankey、radar、architecture 的配置/变量加入
+  `makeThemeVariables` 与各 scheme 的 `schemeConfig`，`configForVariant` 对
+  `c4/sankey/architecture` 做深合并；quiet 变体同步补规则。
+- `npm run check` 覆盖新产物；23 种图型 × light/dark 的真实渲染回归见本地审计
+  报告（`.audit/theme/report.md`，未提交）。
+
 ## [0.5.0] - 2026-10-17
 
 视觉重构：图表不再是「贴进对话里的 mermaid 默认图」，而是长在 dsh 里的内容。
