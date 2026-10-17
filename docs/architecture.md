@@ -12,7 +12,8 @@
 | --- | --- |
 | `index.js` | Host 半侧。本插件不注册任何 Host 能力，`apply()` 为空；它的存在只是让 bundle 有一个可挂载的 Loader 行。 |
 | `cordis.patch.yml` | bundle 层：`dsh.bundle.patch` 指向它，profile 组合时插入 `mermaid-preview` 行。 |
-| `src/client.js` | Client 半侧源码（唯一逻辑所在）。 |
+| `src/client.js` | Client 半侧源码（插件逻辑）。 |
+| `src/theme.js` | 图表主题模块（明/暗 themeVariables、themeCSS、各图型布局配置）；构建时被内联进两个产物，演示页直接 import。 |
 | `dist/client.js` | 构建产物，`exports["./client"]` 指向它。 |
 | `dist/dsh-mermaid-preview.client.js` | 构建产物，动态插件（`cordis_define` 的 `code.client`）载荷。 |
 | `locale/*.json` | 插件在「设置 → 插件」里的展示标题/描述。 |
@@ -81,13 +82,17 @@ BOM、`%%` 行注释、`%%{ … }%%` 指令、`---` front matter。
 - 容器 `.dsh-mermaid` 追加为 `.md-code-block` 的**最后一个子节点**。
   React 的子节点是 `[bannerWrap, content]`，多出来的第 3 个节点不在它的协调范围内，
   它不会去删除。
+- 卡片在 CSS 里变成一列，并用 `order` 把插件容器排到 React 的源码正文前面：
+  **一个头部同时服务「图表」和「源码」两个视图**，源码视图也不会再叠出第二条代码
+  横幅。
+- 插件自绘头部：左侧是等宽的类型词（`flowchart` / `sequenceDiagram` / `gantt`…），
+  右侧是复制源码 / 显示源码 / 放大三个图标按钮。复制按钮由插件写剪贴板（原来内置的
+  复制按钮在横幅里，而横幅被隐藏），源码正文仍是 React 原来那个 `<pre>`。
 - 需要显示图表时，只给 `[data-code-block-content]` 打一个
   `data-dsh-mermaid-hidden` 属性，由插件样式表把它隐藏——**不动 React 的任何节点**。
-- 切到源码 = 摘掉这个属性；内置复制按钮仍然从原来的 `<pre>` 读取文本，行为不变。
-- 显示图表时另外给横幅外层容器打一个 `data-dsh-mermaid-banner` 属性，把「代码块」
-  那一行（通用标签 + 折叠 + 复制）藏起来：图不是代码，头顶一行代码标签只会让人以为
-  渲染失败了。切到源码视图就摘掉，复制按钮回来，失败时也始终可见。同样是**属性**
-  而不是节点替换，React 无感。
+- 壳层的通用代码横幅（通用标签 + 折叠 + 复制）通过横幅外层容器的
+  `data-dsh-mermaid-banner` 属性隐藏；这是**属性**而不是节点替换，React 无感。
+  切到源码视图时也不恢复：两行头部只会让人以为界面上有两个工具条。
 - 如果 React 因为结构性变化丢掉了容器，`MutationObserver` 会发现并重建它
   （`ensureRecord()` 检测 `holder.isConnected`）。
 
@@ -105,9 +110,9 @@ renderBlock → sourceOf → isMermaidFence
       ▼
 enqueue(...)     串行队列             ← 一屏多图不会并发挤爆主线程
       ▼
-paint: loadMermaid → configure → mermaid.render
+paint: loadMermaid → configure（configForVariant(scheme, variant)）→ mermaid.render
       ▼
-注入 SVG + applyView
+注入 SVG + applyView + 尺寸测量
 ```
 
 - **Mermaid 按需加载**：只有真的出现候选围栏才去取 UMD（`window.mermaid` 已存在则
@@ -121,13 +126,17 @@ paint: loadMermaid → configure → mermaid.render
   | 阶段 | 行为 |
   | --- | --- |
   | 第 1–3 次失败 | 静默退避重试（400 / 900 / 1800ms），不出任何提示 |
-  | 退避耗尽 | 才显示红色说明（`--dsw-alias-state-error-primary`），保留原始代码块 |
+  | 退避耗尽 | 才显示提示条（一句人话 + 可展开的解析器详情），保留原始代码块 |
   | 围栏文本再次变化 | 立即清除提示、重置退避预算，重新渲染 |
 
   记录状态挂在 block 上（`data-dsh-mermaid="pending｜done｜failed"`），但**不再
   用它做「不再重试」的判据**——0.3.1 及之前正是如此：一次流式中途的解析失败会把块
   永久标记为 failed，之后即使围栏写完了（或被重新生成的消息复用同一个 DOM 节点）
   也再也不渲染，红字错误一直挂到组件重建。现在只有「文本没变且已成功/已放弃」才跳过。
+- **主题**：每次渲染前用 `configForVariant(themeScheme(), variant)` 初始化 mermaid
+  （`base` 主题 + 当前设计系统色板派生的 `themeVariables`/`themeCSS` + 各图型布局
+  配置；默认 Radix Colors，卡片头部可切换并持久化），详见
+  [design.md](./design.md) 与 §6。
 - **安全**：`securityLevel: 'strict'`（禁用 HTML 标签与脚本），
   `suppressErrorRendering: true`（mermaid 自己不会往页面里塞错误图）。
 
@@ -144,6 +153,7 @@ paint: loadMermaid → configure → mermaid.render
 | 去抖定时器 | `ctx.effect` 的清理函数逐个 `clearTimeout` |
 | `<script>`（mermaid UMD） | `ctx.effect` 的清理函数移除 |
 | 查看器 `<div data-dsh-mermaid-zoom>` 及其 window 监听 | `ctx.effect` 的清理函数调用 `viewer.dispose()`（摘监听 + 删节点） |
+| 每张卡片的 `ResizeObserver`、复制反馈定时器 | 记录（record）持有，随卡片/插件清理断开或清除 |
 | 注入的 DOM、`data-dsh-mermaid*` 属性 | 清理函数逐个摘除 |
 | `theme/change`、`locale/change` 监听 | `ctx.on` |
 | locale 字典 | `ctx.effect(() => locale.register(...))` |
@@ -154,8 +164,14 @@ paint: loadMermaid → configure → mermaid.render
 
 ## 6. 主题与语言
 
-- 主题：`ctx.get('theme').getTheme().active.colorScheme` → mermaid `dark` / `default`；
+- 主题：`ctx.get('theme').getTheme().active.colorScheme` → `light` / `dark`；
   取不到时退回 `prefers-color-scheme`。`theme/change` 触发全部重绘。
+- **图表主题**：`src/theme.js` 用各开源设计系统的已发布色板重新推导 mermaid `base`
+  主题（7 套设计系统 + 中性主题，明暗各一套），带少量 `themeCSS` 几何修正与各图型
+  布局配置；默认 Radix Colors，卡片头部的主题菜单在运行时切换。字体用字面量而不是
+  `inherit`（mermaid 在宿主正文环境测量、在卡片代码字体环境渲染，继承字体会导致
+  class/state 标签被裁）。构建时该模块被内联进产物，运行时只多一个
+  `configForVariant()` 调用。详细规则见 [design.md](./design.md)。
 - 语言：文案走 Client locale 服务，但**不在 `apply()` 里绑定一次**——客户端模块按依赖
   顺序挂载，本插件可能早于 locale 服务就绪，过早绑定会永久退到内置英文（这就是
   「界面中文、插件英文」的成因）。现在的解析顺序：
@@ -184,9 +200,22 @@ paint: loadMermaid → configure → mermaid.render
 
 ## 7. 放大查看器
 
+### 7.1 卡片内尺寸策略
+
 mermaid 渲染出的 SVG 自带 `width="100%"` 和 `style="max-width: <自然宽>px"`——它被
-设计成**填满容器**。代码块只有一栏宽，于是宽图会被等比压小，节点文字小到看不清。
-查看器要解决的就是这条约束，做法是：
+设计成**填满容器**。卡片本身只有一栏宽，于是宽图会被等比压小，节点文字小到看不清。
+卡片内的第一层策略是：
+
+- 能放下就按容器宽度适配（不放大）。
+- 适配比例会低于 `MIN_FIT_SCALE = 0.85` 时，**保持原始尺寸**改为横向滚动，右缘用
+  mask 渐隐提示（滚到末尾后消失）；不把 14px 标签压成 9px。
+- 高度上限 `min(900px, 85vh)`，超出纵向滚动。
+- `ResizeObserver` 监听画布宽度，侧栏/字号/窗口变化后重新测量。
+- 全窗口查看器负责「一次看全」的诉求。
+
+### 7.2 查看器
+
+查看器要解决的就是「整图 + 可读 + 可缩放」这条约束，做法是：
 
 ```
 点击图表 / 「放大」按钮
@@ -199,9 +228,9 @@ cloneNode(true) 复制 SVG          ← 代码块里那份一个字节都不动
    transform: translate(x, y) scale(s)
 ```
 
-- **图纸**：mermaid 的 SVG 是**透明画布**，只画节点和连线。查看器给克隆出来的 SVG
-  加一层主题层色背景（+圆角+投影），否则放大后节点之间的空隙会把背后被压暗的会话
-  透出来，图反而更看不清。
+- **图纸**：mermaid 的 SVG 是**透明画布**，只画节点和连线。查看器把克隆出来的 SVG
+  放进一张「纸」里（卡片同色背景 + 16px 圆角 + 22px 内边距 + 升层投影），否则放大后
+  节点之间的空隙会把背后被压暗的会话透出来，图反而更看不清；内边距也避免节点贴着纸边。
 - **坐标系**：`pan` 层 `transform-origin: 0 0`，图的自然尺寸就是它的
   `width/height`。缩放只改 `s`，平移只改 `x/y`；缩放以指针为锚点时用
   `x' = px - (px - x) × (s'/s)`，光标下那块内容保持不动。
@@ -210,6 +239,9 @@ cloneNode(true) 复制 SVG          ← 代码块里那份一个字节都不动
   才继续变小，否则会缩到看不见）。
 - **位置约束**：图比窗口小时自动居中（拖也拖不走），比窗口大时贴边——不会出现
   「拖到看不见的地方」。
+- **工具条**：顶部居中的悬浮胶囊（类型 + − / 百分比 / + / 适应窗口 / 关闭），
+  底部是安静的「滚轮缩放 · 拖拽平移 · Esc 关闭」提示胶囊；窄屏隐藏提示与类型。
+  遮罩使用主题 mask token + `backdrop-filter: blur(12px)`。
 - **交互**：滚轮（`exp(-deltaY × 0.002)`，按行滚动时为 `0.05`）、`+` / `-` / `0`、
   双击切换适应窗口 ↔ 1:1、方向键平移 80px、拖拽平移、`Esc` 或点击空白背景关闭。
   `pointerdown` 绑定 `setPointerCapture`，拖到窗口外也不断线；位移小于 4px 视为点击，
@@ -236,7 +268,7 @@ cloneNode(true) 复制 SVG          ← 代码块里那份一个字节都不动
   会静默退避重试，不弹错误（见 §4 失败分级）。错误提示只在围栏文本停止变化后仍然
   解析失败时出现。
 - **内容判定**：见 §2 的误判边界。
-- **查看器不做焦点陷阱**：`Tab` 仍可能走出弹层（`Esc` 与方向键在弹层内被拦下）。
+- **查看器不做完整焦点陷阱**：`Tab` 仍可能走出弹层（`Esc` 与方向键在弹层内被拦下）。
   这是刻意的最小实现——插件只在页面上挂装饰，不接管应用级焦点管理。
 - **查看器里是静态副本**：克隆不会带上 `bindFunctions()` 绑定的事件，因此图内交互
   只在代码块里那一份上生效。`securityLevel: 'strict'` 下 mermaid 本身也不生成链接。

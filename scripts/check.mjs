@@ -10,6 +10,7 @@
  *      failure of a client plugin)?
  *   4. Does the Mermaid detection heuristic behave?
  *   5. Do the docs and the demo pin the same Mermaid release as the plugin?
+ *   6. Do the package version and the latest CHANGELOG release agree?
  *
  * It does NOT prove what a user sees; see docs/install.md § 验证.
  */
@@ -48,6 +49,7 @@ const syntax = (file, wrap = false) => {
   if (wrap) rmSync(dirname(target), { recursive: true, force: true })
 }
 syntax('src/client.js')
+syntax('src/theme.js')
 syntax('index.js')
 syntax('dist/client.js')
 syntax('dist/dsh-mermaid-preview.client.js', true)
@@ -75,6 +77,16 @@ check('host half exists: index.js', existsSync(join(root, 'index.js')))
 // on: `window.__ModuleLoader__.load({ id: <package name>, factory })`.
 const bundle = read(clientExport)
 check('client bundle registers via __ModuleLoader__', bundle.includes('window.__ModuleLoader__.load('))
+check('client bundle inlines src/theme.js', bundle.includes("theme: 'base'") && !bundle.includes('export const FONT_STACK'))
+check('bundle pins mermaid strict security', bundle.includes("securityLevel: 'strict'"))
+check('bundle suppresses mermaid error diagrams', bundle.includes('suppressErrorRendering: true'))
+check('bundle ships the in-card theme menu', bundle.includes('dsh-mermaid-theme-item') && bundle.includes('dsh-mermaid-theme-menu'))
+check(
+  'bundle ships every theme variant',
+  ['radix', 'apple', 'github', 'carbon', 'atlassian', 'material', 'polaris', 'quiet']
+    .every((variant) => bundle.includes(`id: '${variant}'`)),
+)
+check('bundle persists the theme choice', bundle.includes('THEME_STORAGE_KEY') && bundle.includes('localStorage.setItem'))
 check(`client bundle id is ${pkg.name}`, bundle.includes(`id: ${JSON.stringify(pkg.name)}`))
 const dynamic = read('dist/dsh-mermaid-preview.client.js')
 check('dynamic payload is a function body', dynamic.startsWith('/*') && !dynamic.includes('__ModuleLoader__'))
@@ -97,6 +109,13 @@ for (const locale of ['locale/en.json', 'locale/zh.json']) {
 if (check('icon.svg exists', existsSync(join(root, 'icon.svg')))) {
   check('icon.svg within the 256 KiB manifest limit', statSync(join(root, 'icon.svg')).size <= 256 * 1024)
 }
+
+// ---- release consistency ---------------------------------------------------
+// The release checklist bumps both files together; a half-updated version is
+// the classic "tag says one thing, package says another" release bug.
+const changelog = read('CHANGELOG.md')
+const latestRelease = /^## \[([^\]]+)\] - /m.exec(changelog)?.[1]
+check('CHANGELOG latest release matches package.json', latestRelease === pkg.version, `${latestRelease} vs ${pkg.version}`)
 
 // ---- compatibility declaration ---------------------------------------------
 // DSH STORE (and any consumer of the same convention) reads an exact per-release

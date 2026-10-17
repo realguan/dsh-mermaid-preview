@@ -4,9 +4,19 @@
   <img src="assets/banner.png" alt="dsh-mermaid-preview banner" width="100%" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white" alt="powered by dsh" width="121" height="20" /></a>
+</p>
+
 A Cordis plugin that renders Markdown `mermaid` fenced code blocks as diagrams
 inside the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 (dsh) Web UI.
+
+Diagrams are not pasted-in Mermaid defaults: they are redrawn with one of
+**seven open-source design-system themes** (Radix Colors by default) and live
+inside dsh as native cards — a type label coloured per diagram kind with
+theme / copy / source / zoom, horizontal scrolling for wide diagrams, a
+full-window zoom viewer, and a quiet banner when rendering fails.
 
 Chat, trajectory, plan review, compaction summaries — every surface rendered by
 `MarkdownText` gets Mermaid support from one hook.
@@ -70,19 +80,38 @@ Full checklist: [docs/install.md](./docs/install.md).
 - 🧭 **Tracks the current render contract** — detection is "unhighlighted fence +
   a leading Mermaid statement", not the language label that current dsh no longer
   prints (see [architecture.md](./docs/architecture.md) §2)
-- 🌗 **Follows the theme** — light/dark aware, repaints on `theme/change`
-- 🌐 **Follows the locale** — button copy goes through the Client locale service
-- 📋 **Keeps the host controls** — no React node is replaced, so the built-in copy
-  button still works; a "show source / show diagram" toggle is added
-- 🔍 **Click to enlarge** — models love very wide diagrams, and the fence's width
-  shrinks them to unreadable type. Click the diagram (or the "Zoom" button) for a
-  full-window viewer: wheel zoom, drag to pan, fit / 1:1, `Esc` to close
-  (see [architecture.md](./docs/architecture.md) §7)
-- 🧾 **No code banner over a diagram** — a diagram is not code, so the shell's
-  generic code label and its collapse/copy buttons step aside while one is on
-  screen; they come back with the source view
-- 🛟 **Fails soft** — a CDN or syntax failure keeps the original code block and
-  shows an inline note
+- 🌈 **Switchable design-system themes** — the default is **Radix Colors** (the
+  author's final pick); seven styles ship: **Radix Colors, Apple HIG,
+  GitHub Primer, IBM Carbon, Atlassian Design System, Material Design 2,
+  Shopify Polaris**, plus the original neutral dsh theme. Each derives pastel nodes, data-viz ramps, sequence/note/
+  autonumber accents from that system's published solid + neutral tokens, and
+  follows its corner-radius language (Carbon/Material squarer, Radix/Apple
+  rounder)
+- 🎨 **Switch themes right in the card** — the palette button in every diagram
+  header opens a theme menu with a three-dot swatch per style and a check on the
+  live one; picking a style repaints every diagram at once and is remembered
+  (localStorage). To change the default instead, edit `THEME_VARIANT` in
+  `src/theme.js` (see [design.md](./docs/design.md)); the demo page's "style"
+  picker also flips them live
+- 🌗 **Follows the theme** — light/dark aware; a theme switch repaints diagrams,
+  the card chrome, and the viewer together
+- 🌐 **Follows the locale** — copy goes through the Client locale service
+- 📋 **One header per card** — no React node is replaced; the plugin draws its own
+  header: a colour-coded type tag on the left (Apple system-colour tint) and
+  theme / copy source / show source / zoom on the right. The source view is
+  React's original `<pre>`; the shell's generic code banner is hidden with an
+  attribute instead of stacking a second header
+- 🧾 **A diagram is not code** — the card header shows the diagram type
+  (`flowchart`, `sequenceDiagram`, `gantt`, …) instead of a meaningless "Code"
+  label
+- 📐 **Wide diagrams stay readable** — they fit when they can, and keep their
+  natural size with horizontal scroll when they cannot (the right edge fades until
+  you reach the end); click the diagram or the header's zoom control for the
+  full-window viewer: blurred mask, floating toolbar, wheel zoom, drag to pan,
+  fit / 1:1, `Esc` to close (see [architecture.md](./docs/architecture.md) §7)
+- 🛟 **Fails soft, without shouting** — a CDN or syntax failure keeps the source
+  and shows a calm note (a human sentence plus expandable parser detail) instead
+  of a wall of red; editing the fence retries automatically
 - 🧹 **Clean disposal** — styles, observer, timers, script tag, and injected DOM
   all belong to the plugin fiber
 - 🧪 **Self-checking** — `npm run check` validates syntax, manifest, artifact
@@ -96,6 +125,15 @@ Full checklist: [docs/install.md](./docs/install.md).
 ```bash
 npm run demo        # → http://localhost:8090
 ```
+
+The demo imports the plugin's own `src/theme.js`, so what it renders is exactly
+what chat renders — including every design-system theme. The header's new
+"style" picker switches Radix / Apple / GitHub / Carbon / Atlassian / Material /
+Polaris / neutral live, in both light and dark.
+
+| Light | Dark |
+| --- | --- |
+| <img src="assets/demo-light.png" alt="Demo page in light theme" width="100%" /> | <img src="assets/demo-dark.png" alt="Demo page in dark theme" width="100%" /> |
 
 ## How it works (30 seconds)
 
@@ -111,14 +149,16 @@ then lazily loads Mermaid 11 (jsDelivr CDN) and injects the SVG into a
 body with an attribute instead of replacing any React-owned node.
 
 Full rationale, DOM contract, disposal strategy, and known limits:
-[docs/architecture.md](./docs/architecture.md).
+[docs/architecture.md](./docs/architecture.md). Visual rules, design tokens, and
+the diagram theme: [docs/design.md](./docs/design.md).
 
 ## Layout
 
 ```
 index.js                        Host half (empty apply; gives the bundle a mountable row)
 cordis.patch.yml                Bundle layer (dsh.bundle.patch)
-src/client.js                   The only logic source (ES module, export default)
+src/client.js                   Plugin logic source (ES module, export default)
+src/theme.js                    Diagram theme (light/dark theme variables + diagram config; inlined at build)
 scripts/build.mjs               Emits dist/client.js and dist/dsh-mermaid-preview.client.js
 scripts/check.mjs               Syntax / manifest / artifact freshness / detection / version pins
 dist/client.js                  Native bundle (exports["./client"], loaded by client-modules)
@@ -128,6 +168,7 @@ icon.svg                        Plugin icon
 demo/                           Dependency-free standalone demo page
 docs/install.md                 Install / uninstall / update / verify / FAQ
 docs/architecture.md            Implementation notes and safety
+docs/design.md                  Visual design: tokens, diagram theme, card and viewer specs
 docs/compatibility.md           Per-release DSH compatibility claims and their evidence
 ```
 
@@ -155,10 +196,20 @@ docs/compatibility.md           Per-release DSH compatibility claims and their e
 - **Nothing renders while streaming**: by design; a fence must be quiet for 250 ms.
 - **A non-Mermaid fence became a diagram**: detection is content-based, so a fence
   whose first line happens to be `graph TD` is claimed. Change that first line.
-- **The diagram is too wide to read**: click it, or the "Zoom" button under it, for
-  the full-window viewer. Fit is the default; wheel zooms about the pointer, drag
-  pans, double-click toggles fit ↔ 1:1, `0` resets, `Esc` closes. The viewer works
-  on an SVG copy, so the code block itself is untouched.
+- **The diagram is too wide to read**: the card keeps a readable size and scrolls
+  horizontally (with a fade cue at the right edge); click the diagram or the zoom
+  control in the card header for the full-window viewer. Fit is the default; wheel
+  zooms about the pointer, drag pans, double-click toggles fit ↔ 1:1, `0` resets,
+  `Esc` closes. The viewer works on an SVG copy, so the code block itself is
+  untouched.
+- **The diagram colors changed**: since 0.5.0 the default is a Radix Colors
+  diagram theme instead of Mermaid's stock palette, so the old lavender/purple
+  nodes are gone. Open the palette button in any diagram header to switch styles;
+  the choice applies immediately and is remembered. To change the default
+  instead, set `THEME_VARIANT` at the top of `src/theme.js` to `radix` / `apple` /
+  `github` / `carbon` / `atlassian` / `material` / `polaris` / `quiet` and run
+  `npm run build`. A `%%{init: …}%%` directive in the fence can still override the
+  theme.
 - **Copy is English while the interface is Chinese**: the plugin follows dsh's
   language setting — it binds the locale service's namespace dictionary once that
   service is up, and falls back to the built-in dictionary picked by `<html lang>`

@@ -1,59 +1,198 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="system">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>dsh-mermaid-preview · 独立演示</title>
+  <script>
+    // Apply a saved appearance before the first paint, so a dark session never
+    // flashes white. demo.js owns everything after this point.
+    try {
+      var savedTheme = localStorage.getItem('dsh-mermaid-demo-theme')
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        document.documentElement.dataset.theme = savedTheme
+      }
+    } catch (error) { /* storage unavailable: follow the system */ }
+  </script>
   <link rel="stylesheet" href="./demo.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>dsh-mermaid-preview <span class="badge">standalone demo</span></h1>
-    <p class="sub">
-      与 dsh 插件同源的渲染逻辑：左侧写 Mermaid 源码，右侧实时出图。
-      支持 <code>flowchart / sequenceDiagram / classDiagram / stateDiagram-v2 / gantt /
-      pie / erDiagram / journey / mindmap / gitGraph / timeline</code> 等。
-    </p>
+  <a class="skip-link" href="#source">跳到源码编辑器</a>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="24" height="24" focusable="false">
+          <defs>
+            <linearGradient id="brand-gradient" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#5C8CF0" />
+              <stop offset="1" stop-color="#3F6FDA" />
+            </linearGradient>
+          </defs>
+          <rect width="24" height="24" rx="7" fill="url(#brand-gradient)" />
+          <g fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4.75" y="4.75" width="7" height="5" rx="1.6" />
+            <rect x="12.25" y="14.25" width="7" height="5" rx="1.6" />
+            <path d="M11.75 7.25h1.5a2.25 2.25 0 0 1 2.25 2.25v4.75" />
+          </g>
+        </svg>
+      </span>
+      <h1 class="brand-name">dsh-mermaid-preview</h1>
+    </div>
+    <div class="header-end">
+      <label class="variant-pick" for="variant-select">
+        <span class="variant-label">风格</span>
+        <select id="variant-select" class="variant-select" aria-label="图表设计系统风格"></select>
+      </label>
+      <span class="chip">standalone demo</span>
+      <div class="seg theme-seg" role="group" aria-label="外观主题">
+        <button type="button" class="seg-btn" data-theme-set="system" aria-pressed="true" aria-label="跟随系统" title="跟随系统">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><rect x="2" y="2.5" width="12" height="8.5" rx="1.5" /><path d="M5.5 14h5M8 11v3" /></svg>
+        </button>
+        <button type="button" class="seg-btn" data-theme-set="light" aria-pressed="false" aria-label="浅色主题" title="浅色">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.25M8 13.25v1.25M1.5 8h1.25M13.25 8h1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M12.6 3.4l-.9.9M4.3 11.7l-.9.9" /></svg>
+        </button>
+        <button type="button" class="seg-btn" data-theme-set="dark" aria-pressed="false" aria-label="深色主题" title="深色">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="M13.5 9.3A5.6 5.6 0 0 1 6.7 2.5a5.6 5.6 0 1 0 6.8 6.8Z" /></svg>
+        </button>
+      </div>
+    </div>
   </header>
 
-  <main class="layout">
-    <section class="pane editor">
-      <div class="toolbar">
-        <label for="preset">示例</label>
-        <select id="preset">
-          <option value="flowchart">流程图 flowchart</option>
-          <option value="sequence">时序图 sequenceDiagram</option>
-          <option value="class">类图 classDiagram</option>
-          <option value="state">状态图 stateDiagram-v2</option>
-          <option value="gantt">甘特图 gantt</option>
-          <option value="pie">饼图 pie</option>
-          <option value="er">ER 图 erDiagram</option>
-          <option value="journey">旅程图 journey</option>
-          <option value="mindmap">思维导图 mindmap</option>
-          <option value="git">Git 图 gitGraph</option>
-          <option value="timeline">时间线 timeline</option>
-        </select>
-        <label for="theme">主题</label>
-        <select id="theme">
-          <option value="default">default（亮色）</option>
-          <option value="dark">dark（暗色）</option>
-          <option value="neutral">neutral</option>
-          <option value="forest">forest</option>
-        </select>
-        <button id="copy" type="button">复制源码</button>
+  <noscript><p class="noscript">此演示需要启用 JavaScript 才能渲染图表。</p></noscript>
+
+  <main class="workspace">
+    <section class="pane editor-pane" aria-labelledby="editor-title">
+      <div class="pane-head">
+        <h2 class="pane-title" id="editor-title">源码</h2>
+        <div class="pane-tools">
+          <button type="button" class="btn btn-copy" id="copy-btn" aria-label="复制 Mermaid 源码">
+            <svg class="icon icon-copy" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><rect x="5.75" y="5.75" width="7.5" height="7.5" rx="1.75" /><path d="M10.25 5.75V4.5A2.5 2.5 0 0 0 7.75 2H4.5A2.5 2.5 0 0 0 2 4.5v3.25a2.5 2.5 0 0 0 2.5 2.5h1.25" /></svg>
+            <svg class="icon icon-check" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false" hidden><path d="m3.25 8.25 3.25 3.25 6.25-7.25" /></svg>
+            <span class="btn-label" id="copy-label">复制</span>
+          </button>
+        </div>
       </div>
-      <textarea id="source" spellcheck="false" autocomplete="off"></textarea>
+
+      <div class="preset-bar">
+        <div class="preset-list" id="preset-list" role="group" aria-label="示例">
+          <button type="button" class="preset" data-preset="flowchart" aria-pressed="true">flowchart</button>
+          <button type="button" class="preset" data-preset="sequence" aria-pressed="false">sequenceDiagram</button>
+          <button type="button" class="preset" data-preset="class" aria-pressed="false">classDiagram</button>
+          <button type="button" class="preset" data-preset="state" aria-pressed="false">stateDiagram-v2</button>
+          <button type="button" class="preset" data-preset="gantt" aria-pressed="false">gantt</button>
+          <button type="button" class="preset" data-preset="pie" aria-pressed="false">pie</button>
+          <button type="button" class="preset" data-preset="er" aria-pressed="false">erDiagram</button>
+          <button type="button" class="preset" data-preset="journey" aria-pressed="false">journey</button>
+          <button type="button" class="preset" data-preset="mindmap" aria-pressed="false">mindmap</button>
+          <button type="button" class="preset" data-preset="git" aria-pressed="false">gitGraph</button>
+          <button type="button" class="preset" data-preset="timeline" aria-pressed="false">timeline</button>
+        </div>
+      </div>
+
+      <div class="editor-wrap">
+        <label class="sr-only" for="source">Mermaid 源码</label>
+        <textarea id="source" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="输入 Mermaid 源码…"></textarea>
+      </div>
+
+      <div class="pane-foot">
+        <span class="meta" id="source-meta">0 行 · 0 字符</span>
+        <span class="meta shortcut" id="shortcut-hint"><kbd id="mod-key">⌘</kbd><kbd>↵</kbd><span>立即渲染</span></span>
+      </div>
     </section>
 
-    <section class="pane preview">
-      <div id="output" class="dsh-mermaid-diagram"><p class="placeholder">等待渲染…</p></div>
-      <pre id="sourceView" class="dsh-mermaid-source" hidden></pre>
-      <div class="footbar">
-        <button id="toggle" type="button" hidden>显示源码</button>
-        <span id="status" class="status"></span>
+    <section class="pane preview-pane" aria-labelledby="preview-title">
+      <div class="pane-head">
+        <h2 class="pane-title" id="preview-title">预览</h2>
+        <span class="status" id="status" role="status" aria-live="polite" data-kind="rendering">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text" id="status-text">渲染中</span>
+        </span>
+        <div class="pane-tools">
+          <button type="button" class="icon-btn" id="expand-btn" aria-label="全屏查看图表" title="全屏查看" hidden>
+            <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="M6 2H3.5A1.5 1.5 0 0 0 2 3.5V6M10 2h2.5A1.5 1.5 0 0 1 14 3.5V6M6 14H3.5A1.5 1.5 0 0 1 2 12.5V10M10 14h2.5a1.5 1.5 0 0 0 1.5-1.5V10" /></svg>
+          </button>
+          <div class="seg view-seg" id="view-seg" role="group" aria-label="预览视图" hidden>
+            <button type="button" class="seg-btn" id="view-diagram" aria-pressed="true">图表</button>
+            <button type="button" class="seg-btn" id="view-source" aria-pressed="false">源码</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage" id="stage" data-state="rendering" data-view="diagram">
+        <div class="progress" id="progress" aria-hidden="true" hidden><span></span></div>
+        <div class="stage-scroll">
+          <div class="output" id="output"></div>
+          <pre class="source-view" id="source-view" hidden tabindex="0" aria-label="Mermaid 源代码"></pre>
+
+          <div class="empty" id="empty" hidden>
+            <span class="empty-icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 16 16" fill="none" focusable="false"><rect x="1.75" y="1.75" width="5.5" height="4.5" rx="1.25" /><rect x="8.75" y="9.75" width="5.5" height="4.5" rx="1.25" /><path d="M7.25 6.25H10.5v3.5" /></svg>
+            </span>
+            <p class="empty-title">还没有图表</p>
+            <p class="empty-text">在左侧输入 Mermaid 源码，或从上方选择一个示例，图表会实时出现在这里。</p>
+          </div>
+
+          <div class="skeleton" id="skeleton" aria-hidden="true">
+            <div class="sk-node sk-a"></div>
+            <div class="sk-link"></div>
+            <div class="sk-row"><div class="sk-node sk-b"></div><div class="sk-node sk-c"></div></div>
+          </div>
+
+          <div class="notice" id="notice" hidden>
+            <span class="notice-icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 16 16" fill="none" focusable="false"><path d="M8 2.5 14 13H2L8 2.5Z" /><path d="M8 6.5v3.25M8 11.25h.01" /></svg>
+            </span>
+            <div class="notice-body">
+              <p class="notice-title" id="notice-title">无法渲染此图表</p>
+              <p class="notice-msg" id="notice-msg"></p>
+              <p class="notice-hint" id="notice-hint">修改上方源码后会自动重新渲染。</p>
+              <details class="notice-detail" id="notice-detail">
+                <summary><svg class="icon chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m5.5 6.25 2.5 2.5 2.5-2.5" /></svg>技术详情</summary>
+                <pre id="notice-pre"></pre>
+              </details>
+              <button type="button" class="btn btn-retry" id="retry-btn" hidden>
+                <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71" /><path d="M13.5 2.5v3.25h-3.25" /></svg>
+                重试加载
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <span class="meta">mermaid <span id="mermaid-version">11.17.2</span></span>
+        <span class="meta" id="diagram-meta">—</span>
       </div>
     </section>
   </main>
+
+  <div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+    <div class="viewer-backdrop" data-viewer-close></div>
+    <div class="viewer-panel">
+      <div class="viewer-bar">
+        <h2 class="viewer-title" id="viewer-title">图表查看器</h2>
+        <span class="meta viewer-type" id="viewer-type"></span>
+        <div class="viewer-tools">
+          <button type="button" class="viewer-btn" id="viewer-out" aria-label="缩小" title="缩小">
+            <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.75" /><path d="m10.6 10.6 3.15 3.15M5 7h4" /></svg>
+          </button>
+          <span class="viewer-level" id="viewer-level" aria-live="polite">100%</span>
+          <button type="button" class="viewer-btn" id="viewer-in" aria-label="放大" title="放大">
+            <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.75" /><path d="m10.6 10.6 3.15 3.15M7 5v4M5 7h4" /></svg>
+          </button>
+          <button type="button" class="viewer-fit" id="viewer-fit" title="适应窗口">适应</button>
+          <button type="button" class="viewer-btn viewer-close" id="viewer-close" aria-label="关闭图表查看器" title="关闭" data-viewer-close>
+            <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path d="m4.25 4.25 7.5 7.5M11.75 4.25l-7.5 7.5" /></svg>
+          </button>
+        </div>
+      </div>
+      <div class="viewer-stage" id="viewer-stage">
+        <div class="viewer-content" id="viewer-content"></div>
+      </div>
+    </div>
+  </div>
 
   <script src="./demo.js" type="module"></script>
 </body>

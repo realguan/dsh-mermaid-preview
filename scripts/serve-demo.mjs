@@ -3,23 +3,28 @@
  * serve-demo.mjs — zero-dependency static server for the standalone demo.
  *
  * Usage: node scripts/serve-demo.mjs [port]
- * Default port: 8090 → http://localhost:8090
+ * Default port: 8090 → http://localhost:8090 (serves demo/index.html)
  *
  * The demo page loads mermaid from the jsDelivr CDN, so an internet
- * connection is required (same as the dsh plugin itself).
+ * connection is required (same as the dsh plugin itself). It imports the
+ * plugin's diagram theme from src/theme.js, so the server root is the package
+ * root; only demo/ and that one module are reachable over HTTP.
  */
 
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, normalize, extname } from 'node:path'
+import { dirname, join, normalize, extname, sep } from 'node:path'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'demo')
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const demoRoot = join(root, 'demo')
+const themeFile = join(root, 'src', 'theme.js')
 const port = Number(process.argv[2] ?? 8090)
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -31,12 +36,19 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`)
     let path = normalize(decodeURIComponent(url.pathname))
-    if (path === '/') path = '/index.html'
-    // Prevent path traversal outside demo/
+    // Redirect to the demo directory so relative asset URLs resolve.
+    if (path === '/' || path === '/demo') {
+      res.writeHead(302, { Location: '/demo/' })
+      res.end()
+      return
+    }
+    if (path === '/demo/') path = '/demo/index.html'
+    // Prevent path traversal outside the served roots.
     if (path.startsWith('/')) path = path.slice(1)
     if (path.includes('..')) throw new Error('forbidden')
     const file = join(root, path)
-    if (!file.startsWith(root)) throw new Error('forbidden')
+    const allowed = file === themeFile || file.startsWith(demoRoot + sep)
+    if (!allowed) throw new Error('forbidden')
     const body = await readFile(file)
     res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream' })
     res.end(body)

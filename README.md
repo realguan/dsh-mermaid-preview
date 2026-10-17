@@ -4,8 +4,16 @@
   <img src="assets/banner.png" alt="dsh-mermaid-preview banner" width="100%" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white" alt="powered by dsh" width="121" height="20" /></a>
+</p>
+
 在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）Web
 界面中，把 Markdown 的 `mermaid` 围栏代码块渲染为图表的 Cordis 插件。
+
+图表不是贴进对话里的 mermaid 默认图，而是用 **Radix Colors 等 7 套开源设计系统主题**
+重绘、长在 dsh 里的原生卡片：按图型着色的类型标签 + 主题 / 复制 / 源码 / 放大，宽图横向
+滚动，全窗口缩放查看器，失败时只留一条安静的提示。
 
 对话、轨迹、计划评审、摘要 —— 所有走 `MarkdownText` 渲染的视图，一处接入，
 处处生效。
@@ -65,16 +73,29 @@ dsh --profile web --dump-config | grep -A2 mermaid-preview
 - 🖼️ **免改壳层**：不修改 dsh 任何源码，通过 DOM 观察自动接管 mermaid 围栏
 - 🧭 **识别跟随当前渲染契约**：以「未高亮围栏 + 首条 mermaid 语句」判定，
   不依赖会消失的语言标签（见 [architecture.md](./docs/architecture.md) §2）
-- 🌗 **跟随主题**：适配 dsh 明/暗主题，切换时实时重绘
-- 🌐 **跟随语言**：按钮文案走 Client locale 服务，中英随界面切换
-- 📋 **保留交互**：不替换 React 节点，原代码块复制按钮继续可用，
-  另附「显示源码 / 显示图表」切换
-- 🔍 **点开看大图**：模型爱输出很宽的图，在代码块宽度里会被压得看不清——点击图表
-  （或「放大」按钮）打开全窗口查看器：滚轮缩放、拖拽平移、适应窗口 / 1:1、
-  `Esc` 关闭（见 [architecture.md](./docs/architecture.md) §7）
-- 🧾 **图表视图收掉代码块横幅**：图不是代码，头顶的「代码块」标签 + 折叠/复制按钮只会
-  显得多余；横幅在切回「显示源码」时回来
-- 🛟 **失败兜底**：CDN 不可达或语法错误时保留代码块并给出提示
+- 🌈 **可切换的设计系统主题**：默认 **Radix Colors**（作者的最终选择），内置 7 套风格——
+  **Radix Colors、Apple HIG、GitHub Primer、IBM Carbon、Atlassian Design System、
+  Material Design 2、Shopify Polaris**，另有原来的 dsh 中性主题。每套都从设计系统官方的实色/中性色 token
+  重新推导粉彩节点、数据图 ramp、序列图/便签/序号配色；节点圆角也跟随该系统的形状语言
+  （Carbon/Material 更方，Radix/Apple 更圆）
+- 🎨 **在卡片里直接换主题**：每张图表卡片头部的调色板按钮打开主题菜单，8 套风格各带
+  三色 swatch、当前项打勾；选择后页面上所有图表即时重绘，并记住你的选择（localStorage）。
+  想改默认值就改 `src/theme.js` 的 `THEME_VARIANT`（见
+  [design.md](./docs/design.md)）；演示页顶部的「风格」下拉框也可实时对比全部风格
+- 🌗 **跟随主题**：明/暗主题实时重绘；切主题时图表配色、卡片和查看器一起切换
+- 🌐 **跟随语言**：文案走 Client locale 服务，中英随界面切换
+- 📋 **一张卡片一个头部**：不替换 React 节点；自绘头部左侧是按图表类型配色的彩色标签
+  （Apple 系统色 tint + 同色文字），右侧是「主题 / 复制源码 / 显示源码 / 放大」四个控件，
+  源码视图就是 React 原来那个 `<pre>`。壳层通用的「代码块」横幅用属性隐藏，不再出现
+  两行头部
+- 🧾 **图表不是代码**：卡片头部左侧显示图表类型（`flowchart` / `sequenceDiagram` /
+  `gantt` …），而不是无意义的「代码块」标签
+- 📐 **宽图不缩成蚂蚁**：能放下就适配，放不下就保持原尺寸横向滚动（右缘渐隐提示，
+  滚到末尾消失）；点击图表或头部放大按钮进入全窗口查看器：模糊遮罩、悬浮工具条、
+  滚轮缩放、拖拽平移、适应窗口 / 1:1、`Esc` 关闭（见
+  [architecture.md](./docs/architecture.md) §7）
+- 🛟 **失败兜底不吓人**：CDN 不可达或语法错误时保留源码，给一条安静的提示
+  （一句人话 + 可展开的解析器详情），不再是整屏红字；文本一改就自动重试
 - 🧹 **干净卸载**：样式、观察器、定时器、脚本、注入节点全部随插件 fiber 清理
 - 🧪 **可自检**：`npm run check` 校验语法、manifest、产物一致性、识别用例与版本一致
 - 📚 **多图型**：flowchart / sequenceDiagram / classDiagram / stateDiagram-v2 /
@@ -86,7 +107,14 @@ dsh --profile web --dump-config | grep -A2 mermaid-preview
 npm run demo        # → http://localhost:8090
 ```
 
-左侧编辑 Mermaid 源码（内置 11+ 种图型预设），右侧实时渲染，主题可切换。
+左侧编辑 Mermaid 源码（内置 11+ 种图型预设），右侧实时渲染；顶部「风格」下拉框
+可实时切换 Radix / Apple / GitHub / Carbon / Atlassian / Material / Polaris / 中性主题，
+主题可切换明暗。
+演示页直接 `import` 插件的 `src/theme.js`，所以它看到的图表和 dsh 对话里完全一致。
+
+| 浅色 | 深色 |
+| --- | --- |
+| <img src="assets/demo-light.png" alt="浅色主题下的演示页" width="100%" /> | <img src="assets/demo-dark.png" alt="深色主题下的演示页" width="100%" /> |
 
 ## 图型示例
 
@@ -113,14 +141,16 @@ flowchart LR
     F -->|点击图表| G[全窗口查看器<br/>缩放 / 平移 / 适应窗口]
 ```
 
-完整原理、DOM 契约、清理策略与已知边界见 [docs/architecture.md](./docs/architecture.md)。
+完整原理、DOM 契约、清理策略与已知边界见 [docs/architecture.md](./docs/architecture.md)；
+图表主题、卡片规格与视觉规则见 [docs/design.md](./docs/design.md)。
 
 ## 目录结构
 
 ```
 index.js                        Host 半侧（空 apply，仅为可挂载的 bundle 行）
 cordis.patch.yml                bundle 层（dsh.bundle.patch 指向它）
-src/client.js                   插件唯一逻辑源码（ES module，export default）
+src/client.js                   插件逻辑源码（ES module，export default）
+src/theme.js                    图表主题（明/暗 themeVariables + 布局配置；构建时内联进产物）
 scripts/build.mjs               生成 dist/client.js 与 dist/dsh-mermaid-preview.client.js
 scripts/check.mjs               自检：语法 / manifest / 产物一致性 / 识别用例 / 版本一致
 dist/client.js                  原生 bundle（exports["./client"]，client-modules 加载）
@@ -158,13 +188,19 @@ docs/compatibility.md           DSH 版本兼容性声明与逐版本证据
 - **流式过程中不渲染**：设计如此，围栏静默 250ms 后才渲染；流式中途的解析失败会静默
   退避重试，不会弹错误，围栏写完后自动渲染。
 - **语法错误的图等一会儿才报错**：设计如此。停顿超过静默窗口的半截围栏先静默重试
-  （约 3 秒），确认文本不再变化仍失败才显示红色提示；之后围栏内容一变，提示立即消失
-  并重新渲染。
+  （约 3 秒），确认文本不再变化仍失败才显示提示条——一句「图表语法有误」，解析器原始
+  信息收在「查看详情」里；之后围栏内容一变，提示立即消失并重新渲染。
 - **非 mermaid 围栏被渲染成图**：识别是内容驱动的，首行恰好是 `graph TD` 之类语句
   的围栏会被接管；把首行改成非 mermaid 语句即可。
-- **图太宽，字看不清**：点图表或它下面的「放大」按钮，进入全窗口查看器。默认适应
-  窗口，滚轮缩放（以光标为锚点）、按住拖拽平移，双击在适应窗口与 1:1 之间切换，
-  `0` 复位，`Esc` 关闭。查看器是 SVG 的副本，原代码块不受影响。
+- **图太宽，字看不清**：卡片会保持可读尺寸并允许横向滚动（右缘有渐隐提示）；点图表
+  或卡片头部的放大按钮，进入全窗口查看器。默认适应窗口，滚轮缩放（以光标为锚点）、
+  按住拖拽平移，双击在适应窗口与 1:1 之间切换，`0` 复位，`Esc` 关闭。查看器是 SVG
+  的副本，原代码块不受影响。
+- **图表颜色和我之前看到的不一样了**：0.5.0 起默认使用 Radix Colors 图表主题，不再使用
+  mermaid 默认调色板；旧的薰衣草紫节点不会再有。点任意图表卡片头部的调色板按钮换风格，
+  选择会立刻应用并记住；想把默认值换掉则改 `src/theme.js` 顶部的 `THEME_VARIANT`
+  （`radix` / `apple` / `github` / `carbon` / `atlassian` / `material` / `polaris` /
+  `quiet`）后 `npm run build`。围栏里的 `%%{init: …}%%` 指令仍可覆盖主题。
 - **界面是中文，插件却是英文**：正常情况下会跟随 dsh 的语言设置（locale 服务就绪后
   绑定命名空间字典，未就绪时按 `<html lang>` 选内置字典）。若仍是英文，说明 dsh
   既没提供 locale 服务也没设置文档语言，可把 `DICT` 里的键补进自己的语言或提 issue。

@@ -35,12 +35,21 @@ export const PLUGIN_ID = 'dsh-mermaid-preview'
 const TEST_ONLY = /[ \t]*\/\* dsh:test-only:start \*\/[\s\S]*?\/\* dsh:test-only:end \*\/\n?/
 
 /**
- * Read the canonical source and split it into the parts both wrappers need.
+ * Read the canonical sources and flatten them into the one body both wrappers
+ * need: the diagram theme module (its ESM exports become plain declarations)
+ * followed by the plugin source (no `export default`).
  * @param root - package root.
  * @returns the plugin body (no `export default`) and the plugin record name.
  */
 export function readSource(root) {
   const file = join(root, 'src', 'client.js')
+  const themeFile = join(root, 'src', 'theme.js')
+  const theme = readFileSync(themeFile, 'utf8')
+    .replace(/^export (const|function)/gm, '$1')
+    .replace(/^export default [^\n]*$/gm, '')
+  if (/^export[\s{]/m.test(theme)) {
+    throw new Error(`${themeFile}: only named const/function exports can be inlined`)
+  }
   const source = readFileSync(file, 'utf8')
   const stripped = source.replace(TEST_ONLY, '')
   if (!stripped.includes('export default')) {
@@ -50,7 +59,7 @@ export function readSource(root) {
   if (/^export[\s{]/m.test(body)) {
     throw new Error(`${file}: only the default export may survive; move test-only code between the dsh:test-only markers`)
   }
-  return body
+  return `${theme.trimEnd()}\n\n${body}`
 }
 
 /** The native bundle: a `__ModuleLoader__` factory returning CommonJS exports. */

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Mermaid Preview",
-    "description": "Render Mermaid fenced code blocks as diagrams in every Markdown surface."
+    "description": "Render Mermaid fences as dsh-native diagram cards: seven open-source design-system themes (Radix Colors by default), live light/dark following and a full-window zoom viewer, in every Markdown surface."
   }
 }

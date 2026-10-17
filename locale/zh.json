@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Mermaid 图表预览",
-    "description": "把 Markdown 的 mermaid 围栏代码块渲染为图表，覆盖所有 Markdown 视图。"
+    "description": "把 Markdown 的 mermaid 围栏渲染为 dsh 原生图表卡片：Radix Colors 等 7 套开源设计系统主题、明暗实时跟随、全窗口缩放查看，覆盖所有 Markdown 视图。"
   }
 }

@@ -5,6 +5,79 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-17
+
+视觉重构：图表不再是「贴进对话里的 mermaid 默认图」，而是长在 dsh 里的内容。
+
+### Added
+
+- **图表主题（`src/theme.js`），8 套变体，默认 Radix Colors。** 全部基于 mermaid
+  `base` 主题 + 每套 200+ 个 `themeVariables` + 针对性 `themeCSS` + 14 种图型的
+  布局配置；字体用字面量（修掉 class/state 标签被裁的根因），构建时内联进两个产物，
+  演示页直接 `import` 同一份，三处不会漂移。
+  - `radix`（默认，作者选择）：Radix Colors 12 阶色板取实色，通透明亮，8px 圆角。
+  - `apple`：Apple HIG 系统色，最鲜艳的粉彩 + vivid 数据色。
+  - `github` / `carbon` / `atlassian` / `material` / `polaris`：取各自官方 token，
+    并跟随形状语言（Carbon/Material 方角、GitHub/Polaris 6px）。
+  - `quiet`：dsh 中性主题（白/深灰节点、发丝描边）。
+  默认值由 `THEME_VARIANT` 决定，卡片头部的调色板菜单可在界面里即时切换；
+  演示页顶部的「风格」下拉框可实时对比全部变体（明暗都跟随）。
+- **可切换的设计系统主题（8 套变体）。** 新增 GitHub Primer、Radix Colors、
+  IBM Carbon、Atlassian Design System、Material Design 2、Shopify Polaris 六套
+  开源设计系统色板（每个色相/中性色来自其已发布 token；过亮的规范色会做描边
+  可读性归一）。`buildPalette()` 从「实色 hues + 中性色」推导粉彩 tint、行色、
+  强调文字，所以新增一套设计系统只需要一张色板表。
+- **卡片内主题切换。** 图表卡片头部新增调色板按钮：打开一个挂到 `<body>` 的
+  fixed 弹层菜单，8 套变体各带自身色板取样的三色 swatch，当前项打勾；选择后
+  所有图表即时重绘，选择写入 `localStorage`（`dsh-mermaid-preview:theme`）并跨
+  刷新保留，`THEME_VARIANT` 继续作为默认值。菜单支持方向键 / `Home` / `End` /
+  `Enter` / `Esc`，靠近视口边缘自动翻转与收拢，`Esc` 归还焦点；明暗主题与中英文
+  界面下文案都跟随。
+- **卡片头部。** 图表卡片有了自己的头部：左侧是按图型配色的 Apple 风格 tint 标签
+  （`flowchart` 蓝 / `sequenceDiagram` 绿 / `classDiagram` 紫 / `gantt` 粉 …），
+  右侧 24px 命中区的四个图标按钮——主题、复制源码、显示源码、放大（复制成功变绿）。
+  源码视图与图表视图共用这一行。
+- **宽图可读性策略。** 放得下就适配；适配比例会低于 `MIN_FIT_SCALE = 0.85` 时保持
+  原始尺寸横向滚动，右缘用渐隐提示（滚到末尾消失）；高度上限
+  `min(900px, 85vh)`。容器尺寸变化通过 `ResizeObserver` 重新测量。
+- **安静的失败态。** 语法错误 / CDN 加载失败不再把解析器原文倒满卡片：一条
+  警示色提示条（一句话 + 可展开的详情，详情为等宽限高滚动区）。
+- `docs/design.md`：设计原则、token 表、图表主题、卡片 / 查看器 / 失败态规格、
+  验证方法与已知边界。
+
+### Changed
+
+- **查看器重做。** 模糊遮罩（`bg-mask-3` + `backdrop-filter`）；顶部悬浮胶囊工具条
+  （彩色类型标签 + − / 百分比 / + / 适应窗口 / 关闭）；图纸加 22px 内边距 + 16px 圆角 +
+  升层投影；底部安静的操作提示胶囊；进出场 160–180ms 淡入（尊重
+  `prefers-reduced-motion`）。
+- **壳层代码横幅彻底让位。** 图表卡片不再显示「代码块」标签；切到源码视图也不再
+  叠出第二行横幅与内置复制按钮——复制由插件头部提供（同样写剪贴板），源码正文仍是
+  React 原来的 `<pre>`，不替换任何 React 节点。
+- **独立演示页整体重做。** dsh 风格的 token、明暗两种主题（跟随系统 + 手动切换）、
+  分区预设选择、安静的状态/错误/空态、可访问性与 reduced-motion；零依赖不变，
+  `npm run demo` 仍是一条命令。
+- **构建与自检。** `scripts/build.mjs` 负责把 `src/theme.js` 内联成单文件产物；
+  `npm run check` 增加 `src/theme.js` 语法检查与「bundle 已内联主题」的证据检查。
+- README / architecture / install / contributing 同步更新。
+- **展示文案与品牌徽章。** `locale/zh.json`、`locale/en.json` 与 `package.json` 的
+  description 改为当前视觉与能力的准确描述（设计系统主题、原生卡片、全窗口查看）；
+  README 中英双语补上「powered by dsh」徽章；`docs/design.md` 里「默认 Apple」的
+  旧表述同步为 Radix。
+
+### Fixed
+
+- **对话底部多出 mermaid 的「Syntax error in text」错误图。** 主题重构时
+  `mermaid.initialize()` 丢了插件自己的 `suppressErrorRendering: true`（以及
+  `startOnLoad: false`），流式输出中途的半截围栏解析失败时，mermaid 会把它自己的
+  错误图直接画进 `<body>`，之后即使卡片重试成功，这张错误图也会永久留在页面底部。
+  现在初始化始终显式带上这三个插件级开关（不再受主题变体影响），并在渲染失败后清理
+  mermaid 的临时节点（`d<id>` / `i<id>`）、插件启动时清掉历史残留。
+- **classDiagram / stateDiagram 成员文字被裁切。** 根因是 `fontFamily: 'inherit'`：
+  mermaid 在宿主正文环境测量 HTML label、却在代码卡片的等宽字体环境渲染，量得窄、
+  画得宽。主题改为字面量 dsh 字体栈后测量与渲染一致。
+- **gantt 轴标签重叠、图过宽。** `gantt.useWidth: 660` + `axisFormat: '%m-%d'`。
+
 ## [0.4.0] - 2026-10-16
 
 ### Added
