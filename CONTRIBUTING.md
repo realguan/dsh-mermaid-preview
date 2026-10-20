@@ -6,14 +6,20 @@
 ## 开发
 
 ```bash
-npm run build   # 把 src/theme.js 内联进 src/client.js，生成两个 dist 产物
-npm run check   # 语法 / manifest / 产物一致性 / 识别用例 / 版本一致
-npm run demo    # 启动零依赖演示页 http://localhost:8090
+npm run build          # src/ → dist/（内联 theme.js，并校验随包引擎存在）
+npm run check          # 语法 / manifest / 产物一致性 / 识别用例 / 引擎完整性 / 无 CDN
+npm run demo           # 零依赖演示页 http://localhost:8090
+npm run verify:compat  # 按 DSH 版本逐个验证兼容契约（需要网络）
+npm run shots          # 重新生成 README 截图（需要包外装 Playwright，见 shots/README.md）
 ```
 
 修改 `src/client.js` 或 `src/theme.js` 后必须重新 `npm run build`，并把 `dist/` 产物一并提交
 （仓库保证 dist 与 src 同步，访问者无需构建即可安装；`npm run check` 会拦住
 忘记 build 的情况）。
+
+改了卡片外观或图表主题时，跑一次 `npm run shots` 更新 `assets/shot-*.png` ——
+README 里的截图来自**真实插件产物**，不是手绘图（做法与限制见
+[shots/README.md](./shots/README.md)）。
 
 ## 行为变更的验证清单
 

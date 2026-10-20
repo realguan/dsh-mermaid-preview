@@ -1,43 +1,57 @@
 # 安装与验证
 
-> **0.3.0 起，安装方式变了。** `dsh plugin --profile web add <pkg>` 只是 pnpm
-> 透传命令，它**只安装依赖、不会把包注册成 bundle 层**。0.2 之前文档里说的
-> 「一条命令自动注册」已经不成立——这正是旧版本装上却不生效的原因。
-> 现在必须把包名写进 profile 的 `dsh.profile.bundles`。
+> **一句话**：`dsh plugin add` 会自动把包注册成 bundle 层，装完**重启**即生效。
+> 手工 `pnpm add` 不会——那正是「装了却没反应」的经典原因。
 
 ---
 
-## 方式一：让 Agent 安装（推荐）
+## 方式一：图形界面（桌面客户端，推荐）
 
-在 dsh 会话里让模型调用 `plugin_manager`：
+1. 左侧导航 → **设置 → 插件**，或侧栏的**插件**页；
+2. 右上角 **＋ 添加插件**；
+3. 输入 `github:realguan/dsh-mermaid-preview`（也可贴完整仓库地址），
+   或 **安装第三方插件** 里选包名 / Git 地址 / 本地目录；
+4. 选安装源（国内网络可选「中国大陆镜像源」）；
+5. 阅读安全提示 → **安装**；
+6. **重启客户端**。
 
-```
-action: install_bundle
-target: /绝对路径/dsh-mermaid-preview     # 或 npm/github 安装源
-```
+> 替换已安装包的同名代码需要重启，热更新不足以让新 bundle 生效。
 
-它会完成 pnpm 安装 + 把包加进当前 profile 的 `dsh.profile.bundles`，并通过 HMR
-立即生效（替换已装包的同名代码需要重启 dsh）。
-
-## 方式二：手动安装到某个 profile
+## 方式二：命令行
 
 ```bash
-# 1. 取包（本地开发用 link，线上用 github: 或 npm:）
-git clone https://github.com/realguan/dsh-mermaid-preview.git
-cd dsh-mermaid-preview && npm run check     # 可选：本地自检
+# 默认 profile
+dsh plugin add github:realguan/dsh-mermaid-preview
 
-# 2. 装进 profile 依赖
-dsh plugin --profile web add github:realguan/dsh-mermaid-preview
+# 或指定 profile
+dsh plugin --profile desktop add github:realguan/dsh-mermaid-preview
 
-# 3. 关键一步：注册为 bundle 层
-#    编辑 ~/.dsh/profiles/web/package.json，在 dsh.profile.bundles 数组里追加：
-#      "dsh-mermaid-preview"
-#    然后让配置生效：
+# 固定版本
+dsh plugin --profile desktop add github:realguan/dsh-mermaid-preview#v0.6.0
+```
+
+`dsh plugin` 会把其余参数原样透传给 pnpm（`add <pkg>` / `remove <pkg>` / `why <pkg>` …），
+并在**装完之后**做一次 `reconcile`：读取新装的包，若它声明了 `dsh.bundle`，就把包名
+追加进 profile `package.json` 的 `dsh.profile.bundles`，并加载它声明的 patch 层。
+
+所以这一步是自动的，**不需要手改配置**。装完重启 `dsh web` 或桌面客户端。
+
+### 如果用了手工 pnpm
+
+```bash
+cd ~/.dsh/profiles/web
+pnpm add github:realguan/dsh-mermaid-preview
+```
+
+`pnpm` 自己不认识 dsh 的 bundle 概念，**不会**注册。补上：
+
+```bash
+# 编辑 ~/.dsh/profiles/web/package.json，在 dsh.profile.bundles 里追加：
+#   "dsh-mermaid-preview"
 cd ~/.dsh/profiles/web && pnpm install
 ```
 
-也可以不改 `package.json`，改用 profile 的用户 patch 层
-（`~/.dsh/profiles/web/cordis.patch.yml`）：
+或者用 profile 的用户 patch 层（`~/.dsh/profiles/web/cordis.patch.yml`）：
 
 ```yaml
 - insert:
@@ -45,155 +59,159 @@ cd ~/.dsh/profiles/web && pnpm install
       name: dsh-mermaid-preview
 ```
 
-重启 `dsh web`（或等 HMR）后生效。
-
-### 验证安装是否成功
+## 方式三：本地源码（开发者）
 
 ```bash
-# 1. 组合结果里应该有 mermaid-preview 行
+git clone https://github.com/realguan/dsh-mermaid-preview.git
+cd dsh-mermaid-preview
+
+npm run build          # src/ → dist/（dist 随仓库提交，消费者侧不需要构建）
+npm run check          # 自检
+
+dsh plugin --profile web add link:$PWD
+```
+
+改 `src/` 之后必须 `npm run build`；`npm run check` 会拦住「改了源码忘了 build」。
+
+> **`--profile desktop` 的说明。** 桌面版的 profile 由应用独占管理：
+> `dsh --profile desktop --dump-config` 会被拒绝（`profile "desktop" is managed
+> exclusively by the Electron application`），但 `dsh plugin --profile desktop add`
+> 本身可用——它只是拿到 profile 目录的锁去跑 pnpm + reconcile。
+> 稳妥做法是**退出应用后**再执行，装完重启。
+
+## 验证安装
+
+```bash
+# 1. 组合结果里应有 mermaid-preview 行
 dsh --profile web --dump-config | grep -A2 mermaid-preview
 
 # 2. 会话里让模型调用 plugin_manager list_bundles，
 #    应看到 dsh-mermaid-preview：enabled=true, installed=true
 
-# 3. 页面侧：随便发一条带 ```mermaid 围栏的消息，应看到图而不是代码块
+# 3. 页面侧：控制台执行
+#    window.__DSH_BOOT__.entries.map(e => e.id)
+#    应包含 "dsh-mermaid-preview"
+
+# 4. 发一条带 ```mermaid 围栏的消息，应出图而不是代码块
 ```
 
-### 卸载
+## 卸载
 
 ```bash
-# 让模型调用 plugin_manager：action: remove_bundle, target: dsh-mermaid-preview
-# 或者手动：
-#   1. 从 dsh.profile.bundles 删除 "dsh-mermaid-preview"
-#   2. 从 dependencies 删除同一行
-cd ~/.dsh/profiles/web && pnpm install
+dsh plugin --profile desktop remove dsh-mermaid-preview
 ```
 
-### 更新
+或在插件页里关掉。`remove` 同样会走 reconcile：依赖删除后包名会自动从
+`dsh.profile.bundles` 里移除（已实测）。插件自身在 dispose 时会清掉样式、观察器、
+定时器、脚本、注入节点与查看器。
+
+## 更新
 
 ```bash
-cd dsh-mermaid-preview && git pull && npm run build   # 改了 src 才需要 build
-dsh plugin --profile web add github:realguan/dsh-mermaid-preview
+dsh plugin --profile desktop add github:realguan/dsh-mermaid-preview   # 重装最新
+dsh plugin --profile desktop add github:realguan/dsh-mermaid-preview#v0.6.0   # 或固定版本
 ```
 
----
-
-## 方式三：动态插件（会话内定义，免 profile 修改）
-
-适合临时试用。把 `dist/dsh-mermaid-preview.client.js` 的内容作为
-`code.client` 交给 `cordis_define`，再 `cordis_run` 并允许即可。
-该产物与原生 bundle 同源（`npm run build` 同时生成两者）。
-
----
+装完重启。桌面客户端暂不支持自动更新，**升级需先卸载再安装**。
 
 ## 验证（本仓库能证明什么）
 
 `npm run check` 覆盖：
 
-1. `src/client.js`、`src/theme.js`、`index.js`、两个 `dist` 产物、脚本全部通过
-   `node --check`；
+1. `src/client.js`、`src/theme.js`、`index.js`、两个 `dist` 产物、引擎分块、全部脚本
+   通过 `node --check`；
 2. manifest 满足 dsh 0.2.x 的客户端插件契约（`exports["./client"]`、
    `dsh.bundle.patch`、`dsh.client.platform === 'web'`、`exports["./package.json"]`、
    `./locale/*.json`、图标大小）；
-3. `dist/` 与 `src/` 一致（防止「改了源码忘了 build」这一客户端插件的经典静默故障）；
+3. `dist/` 与 `src/` 一致（防「改了源码忘了 build」这一客户端插件的经典静默故障）；
 4. mermaid 识别启发式的 35 条用例（含 front matter、指令、注释、11.x 新图型、误判样本）；
-5. 插件、演示页、文档里的 mermaid 版本号一致；
-6. 图表主题（默认 Radix Colors 变体，`THEME_VARIANT = 'radix'`）已被内联进 bundle
-   （`theme: 'base'` 存在、没有残留的 ESM export）。
+5. **随包引擎完整**：分块存在、版本与 `src/client.js` 的 `MERMAID_VERSION` 一致、
+   引擎字节的 sha256 与头部记录一致（手改过的引擎冒充不了）；
+6. **出货表面无 CDN 依赖**（源码 / 产物 / 演示 / 基准 / 脚本 / 文档）；
+7. 插件、演示页、文档里的 mermaid 版本号一致；
+8. `package.json` 版本与 CHANGELOG 最新一节一致。
 
-它**不**能证明浏览器里的观感。视觉验证需要在装有插件的 dsh Web 页面上，
-用一条带 `mermaid` 围栏的消息确认：
+它**不**能证明浏览器里的观感。视觉验证要在装有插件的 dsh Web 页面上确认：
 
-- 出现图而不是代码块；图表使用默认的 Radix Colors 设计系统主题（粉彩节点 +
-  同色系描边、系统字体），不是 mermaid 默认的薰衣草紫；
-- 卡片头部显示图表类型（`flowchart` / `sequenceDiagram` …），右侧四个图标
-  （主题 / 复制源码 / 显示源码 / 放大）可用；源码视图就是原来的 `<pre>`，不出现第二行
-  「代码块」横幅；
-- 点卡片头部的调色板按钮弹出主题菜单：8 套风格带三色 swatch，当前项打勾；选别的
-  风格后页面上所有图表即时重绘，刷新页面后选择仍保留，`Esc` 关闭菜单并把焦点还给
-  按钮；
+- 出现图而不是代码块；图表使用默认的 Radix Colors 主题（粉彩节点 + 同色系描边、
+  系统字体），不是 mermaid 默认的薰衣草紫；
+- 卡片头部显示图表类型（`flowchart` / `sequenceDiagram` …），右侧四个控件
+  （主题 / 复制源码 / 显示源码 / 放大）可用；源码视图就是原来的 `<pre>`，
+  不出现第二行「代码块」横幅；
+- 调色板按钮弹出主题菜单：8 套风格带三色 swatch，当前项打勾；换风格后所有图表即时
+  重绘，刷新后选择保留，`Esc` 关闭菜单并把焦点还给按钮；
 - 明暗主题切换后图、卡片与查看器一起重绘；
-- 所有图型按卡片宽度完整适配：宽图等比缩小到整图可见（不裁切），小图最多放大
-  1.5×；头部布局按钮可在「滚动容器（默认，高图限高内滚）」和「完整展开（卡片随图
-  变高）」之间切换，选择会被记住；
-- 语法错误的围栏保留源码并显示一条安静提示，展开「查看详情」能看到解析器原文；
-- 点图表或头部放大按钮打开查看器：模糊遮罩、顶部悬浮工具条；滚轮缩放（光标处内容
-  不动）、拖拽平移、「适应窗口」回到整图、双击在适应窗口与 1:1 间切换、`Esc` 关闭
-  后焦点回到触发元素；
-- 查看器打开时滚轮不会滚动背后的消息流；
-- 界面语言切成英文/中文后，按钮、查看器工具栏与提示文案跟着变（不需要刷新页面）；
+- 所有图型按卡片宽度完整适配；布局按钮在「滚动容器（默认）」与「完整展开」之间切换，
+  选择被记住；
+- 语法错误的围栏保留源码并显示安静提示条，展开「查看详情」能看到解析器原文；
+- 点图表或放大按钮打开查看器：模糊遮罩、悬浮工具条；滚轮缩放（光标处内容不动）、
+  拖拽平移、适应窗口、双击切换 1:1、`Esc` 关闭后焦点回到触发元素；
+- 查看器打开时滚轮不滚动背后的消息流；
+- 界面语言切中/英后，按钮、查看器工具栏与提示文案跟着变（不需刷新）；
 - 停用插件后页面恢复原样（无残留样式、横幅属性、节点与查看器）。
 
----
+## 排查
 
-## 常见问题
+### 装上了但完全不渲染（围栏还是普通代码块）
 
-**装上了但完全不渲染（围栏还是普通代码块）**
+1. **包名在 `dsh.profile.bundles` 里吗**：`dsh --profile <名字> --dump-config | grep -A2 mermaid-preview`。
+   用 `dsh plugin add` 装会自动写入；手工 `pnpm add` 不会——这是最常见的原因。
+2. **控制台有 `client-modules:` 开头的报错吗**：它会指出是哪个包的哪个声明有问题
+   （缺 `./client` 导出、模块图成环等）。
+3. **boot 清单里有这一行吗**：`window.__DSH_BOOT__.entries.map(e => e.id)`。
+4. **重启过吗**：替换已装包同名代码必须重启。
 
-1. 确认包名在 `dsh.profile.bundles` 里，且 `dsh --profile web --dump-config`
-   能看到 `mermaid-preview` 行。只装了依赖、没注册 bundle 是本插件最常见的失败原因。
-2. 打开页面控制台，看有没有 `client-modules:` 开头的报错——它会明确说出
-   是哪个包的哪个声明有问题（缺 `./client` 导出、模块图成环等）。
-3. 确认页面 boot 清单里有这一行：控制台执行
-   `window.__DSH_BOOT__.entries.map(e => e.id)`。
+### 报「图表引擎未找到」
 
-**不渲染且报「图表引擎未找到」**
+包里的 `dist/client.mermaid.js` 缺失或包被裁剪过。引擎随包安装，重装即可；
+本地可用 `npm run check` 验证该文件存在且完整。当前随包的是 Mermaid **11.17.2**
+（`src/client.js` 的 `MERMAID_VERSION`）。
 
-包里的引擎文件 `dist/client.mermaid.js` 没装上（或装的是旧版本包）。引擎随包一起
-安装，重新安装插件即可；本地可用 `npm run check` 验证该文件存在且完整。
-当前随包附带的是 Mermaid **11.17.2**（`src/client.js` 的 `MERMAID_VERSION`）。
+### 免安装的动态载荷（`code.client`）不渲染
 
-**免安装的动态载荷（`code.client`）不渲染**
+动态载荷本身不含引擎（3.4MB 塞不进一次对话粘贴），它会读 boot manifest 里的分块地址——
+**前提是同一个 profile 里装着本插件**。不想装就给个引擎地址：
+页面里设置 `window.__DSH_MERMAID_ENGINE_URL__` 指向可访问的 `mermaid.min.js`。
 
-动态载荷本身不含引擎（3.4MB 的引擎塞不进一次对话粘贴），它会去读 boot manifest
-里的分块地址——所以**同一个 profile 里必须装着本插件**。如果不想装，可以自己指定
-一个引擎地址：页面里设置 `window.__DSH_MERMAID_ENGINE_URL__` 指向一个可访问的
-`mermaid.min.js`。
-
-**流式输出过程中不渲染**
+### 流式输出过程中不渲染
 
 设计如此：围栏静默 250ms 后才渲染，避免半截语法反复报错。
 
-**某个 `text` 围栏被错误地渲染成了图**
+### 某个 `text` 围栏被错误地渲染成了图
 
 识别是内容驱动的（见 [architecture.md](./architecture.md) §2）：首行恰好是
-`graph TD` / `flowchart LR` 之类的非 mermaid 围栏会被接管。给围栏换一个语言标签
-（例如 `text` 改成 `plaintext`）不影响结果，因为判定看内容；把首行注释掉或改成
-非 mermaid 语句即可避免。
+`graph TD` / `flowchart LR` 之类语句的非 mermaid 围栏会被接管。换语言标签没用
+（判定看内容）；把首行改成非 mermaid 语句即可。
 
-**主题切换后图没重绘**
+### 主题切换后图没重绘
 
 确认 dsh 版本仍发出 `theme/change` 事件（`cordis_inspect_query` 的 client `Event`
-目录里能看到）。若事件改名，插件需要同步更新。
+目录里能看到），或页面 `<body>` 上仍有 `data-ds-dark-theme` 属性。两者都没了，
+插件就收不到主题信号。
 
-**宽图看不清 / 想看大图**
+### 宽图看不清 / 想看大图
 
-卡片会把整图缩放到卡片宽度完整显示；图比较小时点图表本身，或卡片头部右侧的放大
-图标，进入查看器。查看器默认适应窗口（小图会放大到填窗）；滚轮缩放、拖拽平移、
-双击在适应窗口与 1:1 间切换、`0` 复位、`Esc` 关闭。放大图标只在图渲染成功后出现（渲染中或失败时隐藏），
-切到「显示源码」时也隐藏。查看器用的是 SVG 副本，关闭后代码块不受影响。
+卡片把整图缩放到宽度完整显示；点图表本身或头部放大图标进查看器。查看器默认适应窗口
+（小图放大到填窗），滚轮缩放、拖拽平移、双击在适应窗口与 1:1 间切换、`0` 复位、
+`Esc` 关闭。放大图标只在渲染成功后出现，切到「显示源码」时隐藏。
 
-**图表配色和网上的 mermaid 截图不一样**
+### 图表配色和网上的 mermaid 截图不一样
 
-0.5.0 起图表用各开源设计系统的色板重绘 `base` 主题（默认 Radix Colors，卡片头部的
-调色板菜单可在界面里切换），不再使用 mermaid 默认调色板。围栏里的 `%%{init: …}%%`
-指令仍然可以覆盖主题。
+0.5.0 起用各设计系统色板重绘 `base` 主题（默认 Radix Colors，可在卡片头部切换），
+不再用 mermaid 默认调色板。围栏里的 `%%{init: …}%%` 指令仍可覆盖主题。
 
-**图表完全不出现，连头部的复制 / 源码 / 放大控件都没有**
+### 图表完全不出现，连头部的复制 / 源码 / 放大控件都没有
 
-这说明插件在接管之前就抛了错（不是识别或语法问题）：块保持原样、没有 holder、也没有
-错误提示。打开控制台看有没有 uncaught 报错并提 issue；0.4.0 之前有过一次这样的回归
-（渲染路径上读到不可用的服务属性），已在 0.4.0 修掉并把定时器回调也包进了 try/catch ——
-现在任何逃逸错误都会变成一条提示条（含可展开的详情），而不是让整块安静地死掉。
+说明插件在接管之前就抛了错（不是识别或语法问题）。打开控制台看有没有 uncaught 报错
+并提 issue；0.4.0 之前有过一次这样的回归，现在任何逃逸错误都会变成一条提示条，
+而不是让整块安静地死掉。
 
-**界面是中文，插件文案却是英文**
+### 界面是中文，插件文案却是英文
 
-插件会跟随 dsh 的语言设置：locale 服务就绪后注册命名空间 `dsh-mermaid-preview`
-并绑定它的翻译函数（服务晚于本插件挂载也没关系，每次取文案都会重试），服务不可用
-时按 `document.documentElement.lang` 在内置中/英字典间选择。若仍显示英文，检查：
+插件跟随 dsh 语言设置：locale 服务就绪后注册命名空间 `dsh-mermaid-preview` 并绑定
+翻译函数（服务晚于插件挂载也没关系），服务不可用时按
+`document.documentElement.lang` 在内置中/英字典间选择。若仍显示英文：
 
-1. 文档语言是否被设置：控制台执行 `document.documentElement.lang`，中文界面下应为
-   `zh` 或 `zh-*`；
-2. locale 服务是否在页面上：`window.__DSH_BOOT__.entries.map(e => e.id)` 里能看到
-   `@deepseek-ai/dsh-client-locale`；
-3. 两者都不成立时插件只能退回内置 `en`——这是它唯一的英文来源。
+1. `document.documentElement.lang` 在中文界面下应为 `zh` 或 `zh-*`；
+2. boot 清单里应有 `@deepseek-ai/dsh-client-locale`；
+3. 两者都不成立时插件只能退回内置 `en`。

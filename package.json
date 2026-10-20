@@ -47,6 +47,7 @@
     "cordis.patch.yml",
     "locale",
     "icon.svg",
+    "assets",
     "demo",
     "examples",
     "docs",
@@ -60,7 +61,8 @@
     "check": "node scripts/check.mjs",
     "demo": "node scripts/serve-demo.mjs",
     "vendor:engine": "node scripts/vendor-engine.mjs",
-    "verify:compat": "node scripts/verify-compat.mjs"
+    "verify:compat": "node scripts/verify-compat.mjs",
+    "shots": "node shots/run.mjs"
   },
   "keywords": [
     "dsh",

@@ -259,7 +259,24 @@ for (const file of ['demo/demo.js', 'README.md', 'README.en.md', 'docs/install.m
   check(`${file} pins mermaid@${pinned}`, text.includes(pinned))
 }
 
-// ---- 7. no runtime CDN ------------------------------------------------------
+// ---- 7. README images and links resolve ------------------------------------
+// The READMEs are the shop window, and a broken screenshot link is invisible in a
+// diff but glaring on GitHub. Every local image must exist; every local doc link
+// must too. The two languages are held to the same standard.
+for (const file of ['README.md', 'README.en.md']) {
+  if (!existsSync(join(root, file))) continue
+  const text = read(file)
+  const images = [...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1])
+    .filter((ref) => !/^https?:/.test(ref))
+  const missingImages = images.filter((ref) => !existsSync(join(root, ref)))
+  check(`${file}: every local image exists`, missingImages.length === 0, missingImages.join(', '))
+  check(`${file}: has screenshots`, images.length >= 5, `found ${images.length}`)
+  const links = [...new Set([...text.matchAll(/\[[^\]]+\](\.\/[^)#]+)(#[^)]*)?\)/g)].map((match) => match[1]))]
+  const missingLinks = links.filter((ref) => !existsSync(join(root, ref)))
+  check(`${file}: every local doc link exists`, missingLinks.length === 0, missingLinks.join(', '))
+}
+
+// ---- 8. no runtime CDN ------------------------------------------------------
 // The engine is vendored, so a CDN URL left anywhere in the shipped surface
 // would quietly bring the network dependency back — and it would only fail on
 // a machine that cannot reach the internet, which is the exact case the
