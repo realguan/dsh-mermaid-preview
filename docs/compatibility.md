@@ -21,7 +21,10 @@
       "0.2.1-alpha.1": "compatible",
       "0.2.1-alpha.2": "compatible",
       "0.2.1-alpha.3": "compatible",
-      "0.2.1-alpha.4": "compatible"
+      "0.2.1-alpha.4": "compatible",
+      "0.2.1-alpha.5": "compatible",
+      "0.2.1-rc.1": "compatible",
+      "0.2.1-rc.2": "compatible"
     }
   }
 }
@@ -58,6 +61,9 @@
 | 0.2.1-alpha.2 | ✓ | ✓ |
 | 0.2.1-alpha.3 | ✓ | ✓ |
 | 0.2.1-alpha.4 | ✓ | ✓ |
+| 0.2.1-alpha.5 | ✓ | ✓ |
+| 0.2.1-rc.1 | ✓ | ✓ |
+| 0.2.1-rc.2 | ✓ | ✓ |
 
 0.2.0-rc.2 另有**真实 profile 证据**：通过 `plugin_manager` 的 `install_bundle`
 安装进一个运行中的 dsh 0.2.0-rc.2 profile，结果为 `application: applied`、
@@ -80,11 +86,17 @@
 至少有一条 `compatible`），但它不联网，因此不重新执行上面 1–5 项的逐版本检查。
 逐版本检查的做法：
 
+仓库里带了这个检查（`scripts/verify-compat.mjs`，只用 Node 内置模块）：
+
 ```bash
-# 对某个版本 V，取该版本官方发布的客户端包，用它们自己的 scanner 解析本包
-npm i --legacy-peer-deps @deepseek-ai/dsh-client-modules@V @deepseek-ai/cordis@<该版本要求的范围>
-node -e "…resolveMeta('<本包>/index.js', …)…"   # 见上文判定标准 1
+# 对某个版本 V（或多个），取该版本官方发布的客户端包，用它们自己的 scanner 解析本包
+npm run verify:compat -- 0.2.1-alpha.5 0.2.1-rc.1 0.2.1-rc.2
 ```
 
-新增 `compatible` 声明时，请先按上面的标准跑一遍对应版本，再把结论写进
-`dshReleases` 与本表。
+它按上面 1–5 项逐条判定并打印 `compatible` / `NOT compatible`；写 `compatible`
+之前请先跑一遍，把结论一并写进 `dshReleases` 与本表。
+
+> **商店的兼容窗口会滚动。** DSH STORE 以「官方最新三个 DSH 发行版」为窗口，
+> 窗口里只要有一个版本没有精确记录，条目就会被判定为「兼容性暂时下架」
+> （见 `AI-Scarlett/DSH-Store#910`）。每出一个新的 DSH 发行版，就要重跑一次这个
+> 检查并补一条声明 —— 这也是本插件需要「新固定 Commit + 新 SemVer」的原因。

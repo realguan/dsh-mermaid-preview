@@ -61,6 +61,7 @@ syntax('dist/client.mermaid.js')
 syntax('scripts/build.mjs')
 syntax('scripts/check.mjs')
 syntax('scripts/vendor-engine.mjs')
+syntax('scripts/verify-compat.mjs')
 
 // ---- 2. manifest -----------------------------------------------------------
 const pkg = parseJson('package.json')
