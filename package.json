@@ -1,6 +1,6 @@
 {
   "name": "dsh-mermaid-preview",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Render Mermaid fenced code blocks as dsh-native diagram cards in every DeepSeek Harness (dsh) Web Markdown surface, with seven open-source design-system themes (Radix Colors by default), live light/dark following and a full-window zoom viewer.",
   "type": "module",
   "main": "index.js",

@@ -41,6 +41,92 @@ window.__ModuleLoader__.load({
 const FONT_STACK =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif"
 
+/** Parse #rgb/#rrggbb to {r,g,b}. */
+const rgbOf = (hex) => {
+  const value = String(hex).replace('#', '')
+  const full = value.length === 3 ? value.split('').map((c) => c + c).join('') : value
+  const n = Number.parseInt(full, 16)
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+
+/** {r,g,b} (already in range) to #rrggbb. */
+const hexOf = ({ r, g, b }) => `#${[r, g, b]
+  .map((n) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0'))
+  .join('')}`
+
+/** Mix two colours; `weight` is the portion of `a` (0..1). */
+const mix = (a, b, weight) => {
+  const x = rgbOf(a)
+  const y = rgbOf(b)
+  return hexOf({
+    r: x.r * weight + y.r * (1 - weight),
+    g: x.g * weight + y.g * (1 - weight),
+    b: x.b * weight + y.b * (1 - weight),
+  })
+}
+
+/** WCAG relative luminance. */
+const luminance = (hex) => {
+  const { r, g, b } = rgbOf(hex)
+  const channel = (value) => {
+    const n = value / 255
+    return n <= 0.03928 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+/** WCAG contrast ratio between two colours. */
+const contrast = (a, b) => {
+  const x = luminance(a)
+  const y = luminance(b)
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
+/** White or near-black, whichever reads better on `color`. */
+const bestText = (color) => (contrast(color, '#FFFFFF') >= contrast(color, '#111111') ? '#FFFFFF' : '#111111')
+
+/** Same-hue legible text colour on this scheme's tint (stronger, not pastel). */
+const strongOnTint = (color, mode) => (mode === 'dark' ? mix(color, '#FFFFFF', 0.18) : mix(color, '#000000', 0.2))
+
+/**
+ * A solid hue with enough body for white text (4.5:1).
+ *
+ * The design systems pick their step-9 solids for large text; a 12px node label
+ * is not large text, so walk the token toward black until it is. Used for the
+ * diagram types where colour encodes a category.
+ */
+const solidOf = (hue) => {
+  let fill = hue
+  for (let i = 0; i < 12 && contrast(fill, '#FFFFFF') < 4.5; i += 1) {
+    fill = mix('#000000', fill, 0.12)
+  }
+  return fill
+}
+
+/**
+ * Give a palette the semantic slope, derived from its own hues.
+ *
+ * `buildPalette` computes these for the six design-system variants; the
+ * hand-written `quiet` and `apple` palettes do not carry them, and without them
+ * those two fell back to plain tints — which is how apple's C4 external box
+ * ended up painted in the card surface colour. Deriving instead of hard-coding
+ * keeps both variants on their own hues.
+ */
+const withSemantic = (p) => {
+  // A palette with neither a slope nor the hue table it would be derived from
+  // (the `quiet` sheet is a literal themeVariables-shaped object) is returned
+  // untouched rather than half-populated.
+  if (p.solid !== undefined || p.sys === undefined || p.card === undefined) return p
+  const mode = p.mode ?? (p.darkMode ? 'dark' : 'light')
+  const solid = {}
+  const tintStrong = {}
+  for (const [name, hue] of Object.entries(p.sys)) {
+    solid[name] = solidOf(hue)
+    tintStrong[name] = mix(hue, p.card, mode === 'dark' ? 0.5 : 0.34)
+  }
+  return { ...p, solid, tintStrong }
+}
+
 /* ------------------------------------------------------------------------- *
  * Light
  * ------------------------------------------------------------------------- */
@@ -990,7 +1076,10 @@ const CONFIG = {
     boxTextMargin: 4,
     noteMargin: 8,
     messageMargin: 20,
-    taskFontSize: '13px',
+    /* A number, not '13px': mermaid computes `i * taskFontSize` for multi-line
+       task labels, and `2 * '13px'` is NaN, which silently drops the line
+       offsets and stacks the lines on top of each other. */
+    taskFontSize: 13,
     taskFontFamily: FONT_STACK,
     actorFontSize: 12,
     titleFontFamily: FONT_STACK,
@@ -1098,7 +1187,7 @@ const QUIET_SCHEME_CONFIG = {
       actorColours: ['#EFF2F6', '#E9EDF3', '#F2F4F7', '#EAEFF5', '#F0F3F6', '#E7ECF2'],
     },
     c4: c4ConfigFor(quietPalette('light')),
-    sankey: { linkColor: '#8A9099' },
+    sankey: { linkColor: 'gradient' },
   },
   dark: {
     journey: {
@@ -1107,7 +1196,7 @@ const QUIET_SCHEME_CONFIG = {
       actorColours: ['#35383D', '#303338', '#3A3D42', '#33363B', '#373A3F', '#2E3136'],
     },
     c4: c4ConfigFor(quietPalette('dark')),
-    sankey: { linkColor: '#6E737B' },
+    sankey: { linkColor: 'gradient' },
   },
 }
 
@@ -1248,7 +1337,8 @@ const NODE_CYCLE = ['blue', 'green', 'orange', 'pink', 'purple', 'teal']
 /**
  * @param {typeof APPLE_LIGHT} p
  */
-const makeThemeVariables = (p) => {
+const makeThemeVariables = (rawPalette) => {
+  const p = withSemantic(rawPalette)
   const white = '#FFFFFF'
   const isDark = p.mode === 'dark'
   const nodeFill = p.nodeFill ?? (isDark ? '#232324' : white)
@@ -1339,9 +1429,14 @@ const makeThemeVariables = (p) => {
     rowEven: rowAlt,
 
     /* --- gantt ---------------------------------------------------------- */
-    sectionBkgColor: p.sys.blue,
-    altSectionBkgColor: p.sys.orange,
-    sectionBkgColor2: p.sys.green,
+    /* Section bands are drawn at `opacity: 0.2` by mermaid's gantt sheet, so a
+       saturated hue lands as a wash that the task bar (a 16% tint at 100%) sits
+       inside at 1.05:1 — the bar dissolves into its own band. Bands are
+       structure, bars are data: keep the bands neutral and let the bars carry
+       the colour. */
+    sectionBkgColor: p.rowAlt,
+    altSectionBkgColor: p.fill,
+    sectionBkgColor2: p.rowAlt,
     excludeBkgColor: p.fill,
     taskBkgColor: p.taskBkg ?? (isDark ? '#1F3A5E' : '#CFE5FF'),
     taskBorderColor: p.sys.blue,
@@ -1350,38 +1445,51 @@ const makeThemeVariables = (p) => {
     taskTextDarkColor: text,
     taskTextLightColor: white,
     taskTextClickableColor: p.sys.blue,
-    activeTaskBkgColor: p.darkTint ? p.sys.blue : p.deepBlue,
+    /* `deepBlue` is a *text* accent — it exists so white labels can sit on it.
+       Used as a bar fill it was the only near-black object in the chart (15.9:1
+       against a card whose other bar classes sit at 1.18-1.31:1) and, with the
+       border set to the same value, it also lost its outline. Active is now
+       simply the task blue pushed one step, which is how done/crit already
+       work. */
+    activeTaskBkgColor: p.sys.blue,
     activeTaskBorderColor: p.deepBlue,
-    doneTaskBkgColor: p.tint.green,
+    doneTaskBkgColor: p.tintStrong?.green ?? p.tint.green,
     doneTaskBorderColor: p.sys.green,
-    critBkgColor: p.tint.red,
+    critBkgColor: p.tintStrong?.red ?? p.tint.red,
     critBorderColor: p.sys.red,
     todayLineColor: p.sys.red,
     vertLineColor: p.separator,
     gridColor: p.separator,
 
     /* --- journey -------------------------------------------------------- */
-    faceColor: p.fill,
-    actor0: p.tint.blue,
-    actor1: p.tint.green,
-    actor2: p.tint.orange,
-    actor3: p.tint.pink,
-    actor4: p.tint.purple,
-    actor5: p.tint.teal,
+    /* The score faces were painted in the card surface itself — 1.01:1, i.e.
+       invisible discs with only a 1px stroke. A face has to read as a filled
+       disc, so it gets a neutral tint one step stronger than the surface. */
+    faceColor: p.tintStrong?.gray ?? p.fill,
+    /* Actor dots: 16% tints measured 1.20:1 and, because a CSS fill beats the
+       renderer's fill attribute, these variables silently overrode the stronger
+       `journey.actorColours` the scheme config also sets. Solid hues make the
+       actor identity readable and stop the config array being dead code. */
+    actor0: p.solid?.blue ?? p.tint.blue,
+    actor1: p.solid?.green ?? p.tint.green,
+    actor2: p.solid?.orange ?? p.tint.orange,
+    actor3: p.solid?.pink ?? p.tint.pink,
+    actor4: p.solid?.purple ?? p.tint.purple,
+    actor5: p.solid?.teal ?? p.tint.teal,
 
     /* --- pie (vivid Apple ramp; white % labels carry a themeCSS halo) --- */
-    pie1: p.sys.blue,
-    pie2: p.sys.green,
-    pie3: p.sys.orange,
-    pie4: p.sys.pink,
-    pie5: p.sys.purple,
-    pie6: p.sys.teal,
-    pie7: p.sys.indigo,
-    pie8: p.vividYellow ?? p.sys.yellow,
-    pie9: p.sys.red,
-    pie10: p.sys.mint,
-    pie11: p.sys.brown,
-    pie12: p.sys.gray,
+    pie1: p.solid?.blue ?? p.sys.blue,
+    pie2: p.solid?.green ?? p.sys.green,
+    pie3: p.solid?.orange ?? p.sys.orange,
+    pie4: p.solid?.pink ?? p.sys.pink,
+    pie5: p.solid?.purple ?? p.sys.purple,
+    pie6: p.solid?.teal ?? p.sys.teal,
+    pie7: p.solid?.indigo ?? p.sys.indigo,
+    pie8: p.solid?.yellow ?? p.vividYellow ?? p.sys.yellow,
+    pie9: p.solid?.red ?? p.sys.red,
+    pie10: p.solid?.mint ?? p.sys.mint,
+    pie11: p.solid?.brown ?? p.sys.brown,
+    pie12: p.solid?.gray ?? p.sys.gray,
     pieTitleTextSize: '15px',
     pieTitleTextColor: text,
     pieSectionTextSize: '12px',
@@ -1454,18 +1562,18 @@ const makeThemeVariables = (p) => {
     cScaleLabel9: text,
     cScaleLabel10: text,
     cScaleLabel11: text,
-    cScaleInv0: p.separator,
-    cScaleInv1: p.separator,
-    cScaleInv2: p.separator,
-    cScaleInv3: p.separator,
-    cScaleInv4: p.separator,
-    cScaleInv5: p.separator,
-    cScaleInv6: p.separator,
-    cScaleInv7: p.separator,
-    cScaleInv8: p.separator,
-    cScaleInv9: p.separator,
-    cScaleInv10: p.separator,
-    cScaleInv11: p.separator,
+    cScaleInv0: p.edge,
+    cScaleInv1: p.edge,
+    cScaleInv2: p.edge,
+    cScaleInv3: p.edge,
+    cScaleInv4: p.edge,
+    cScaleInv5: p.edge,
+    cScaleInv6: p.edge,
+    cScaleInv7: p.edge,
+    cScaleInv8: p.edge,
+    cScaleInv9: p.edge,
+    cScaleInv10: p.edge,
+    cScaleInv11: p.edge,
     scaleLabelColor: text,
 
     /* --- quadrant (four pastel quadrants + vivid points) ---------------- */
@@ -1510,7 +1618,10 @@ const makeThemeVariables = (p) => {
     archGroupBorderWidth: '1.5px',
 
     /* --- C4: only the person silhouette is a theme variable -------------- */
-    personBkg: p.tint.purple,
+    /* The person element is a circle + rect painted from `personBkg`; the
+       `person_bg_color` config key does not reach it. Now that C4 labels are
+       white, this fill has to be the same solid the other element classes use. */
+    personBkg: p.tintStrong?.purple ?? p.tint.purple,
     personBorder: p.sys.purple,
 
     /* --- radar-beta: the graticule/axis/curve knobs live in `radar` ------ */
@@ -1522,7 +1633,7 @@ const makeThemeVariables = (p) => {
       graticuleOpacity: 0,
       graticuleStrokeWidth: 1,
       legendFontSize: 12,
-      curveOpacity: 0.22,
+      curveOpacity: 0.42,
       curveStrokeWidth: 2,
     },
   }
@@ -1578,7 +1689,8 @@ const nodeCycleCSS = (p) =>
  * scheme colours injected.
  * @param {typeof APPLE_LIGHT} p
  */
-const sharedCSS = (p) => {
+const sharedCSS = (rawPalette) => {
+  const p = withSemantic(rawPalette)
   const text = p.label.primary
   const secondary = p.label.secondary
   /* Design-system shape language: corner radius, with a slightly tighter
@@ -1587,10 +1699,14 @@ const sharedCSS = (p) => {
   const cornerSmall = Math.max(2, corner - 2)
   /* Strong same-hue label colours for the pastel kanban columns: design-system
      variants provide these from their own system colours. */
+  /* Derived from this variant's own hues. The hand-written `quiet` and `apple`
+     palettes do not carry `headingShades`, and the previous fallback was four
+     hard-coded RGB values belonging to neither system — the one place in this
+     generated stylesheet where a colour did not come from the preset palette.
+     (`buildPalette` supplies the field for the six design-system variants.) */
+  const pMode = p.mode ?? (p.darkMode ? 'dark' : 'light')
   const headingShades = p.headingShades
-    ?? (p.darkTint
-      ? ['#6EB6FF', '#5CDE7E', '#FFB84D', '#FF6E8E']
-      : ['#0057B8', '#1B6E33', '#A34D00', '#A81238'])
+    ?? [p.sys.blue, p.sys.green, p.sys.orange, p.sys.pink].map((c) => strongOnTint(c, pMode))
   const kanbanHeading = (index) => headingShades[index]
   /* Git branch chips are tinted so the (dark/light) label always contrasts. */
   const gitOrder = ['blue', 'green', 'orange', 'pink', 'purple', 'teal', 'indigo', 'red']
@@ -1613,6 +1729,29 @@ const sharedCSS = (p) => {
   .sections .cluster.section-4 .cluster-label text, .sections .cluster.section-4 .cluster-label span { fill: ${kanbanHeading(3)}; color: ${kanbanHeading(3)}; }
   .items g.node rect.basic.label-container { fill: ${p.nodeFill ?? (p.darkTint ? '#232324' : '#FFFFFF')}; stroke: ${p.separator}; }`
 
+  /* Timeline and treemap are the two types where the scale IS the content: a
+     reader has to be able to tell period A from period B, group A from group B.
+     Their real DOM classes are `.timeline-node.section-N` / `.section--1` (note
+     the -1 offset: the first period is `--1`) and `rect.treemapSection.sectionN`
+     (1-based) — an earlier attempt targeted `.section-N rect`, matched nothing,
+     and washed 17 labels out to 1.05:1. Fill and label colour are emitted as a
+     pair per index so the two can never drift apart again.
+     `solid` is undefined on the hand-written quiet/apple palettes, in which case
+     the block is empty and those variants keep their previous look. */
+  const scaleRules = (() => {
+    if (p.solid === undefined) return ''
+    const order = ['blue', 'green', 'orange', 'pink', 'purple', 'teal', 'indigo', 'yellow', 'red', 'mint', 'brown', 'gray']
+    const out = []
+    order.forEach((hue, i) => {
+      // timeline: i-th period is class `.section-(i-1)`, first one is `--1`
+      out.push(`  g.timeline-node.section-${i === 0 ? '-1' : i - 1} path.node-bkg { fill: ${p.solid[hue]}; }`)
+      out.push(`  g.timeline-node.section-${i === 0 ? '-1' : i - 1} text { fill: #FFFFFF; }`)
+      // treemap: i-th group is `section${i + 1}`
+      out.push(`  rect.treemapSection.section${i + 1} { stroke: ${p.solid[hue]}; stroke-width: 2; }`)
+    })
+    return out.join('\n')
+  })()
+
   /* Radar curves: fill from the pastel tint, stroke from the solid hue. */
   const radarHues = ['blue', 'green', 'orange', 'pink', 'purple', 'teal', 'indigo', 'yellow', 'red', 'mint', 'brown', 'gray']
   const radarRules = radarHues
@@ -1631,10 +1770,22 @@ const sharedCSS = (p) => {
   .stateLabel text { fill: ${text}; }
   .state-note text { fill: ${text}; }
 
+  /* journey paints the section band (rect.journey-section) and its task boxes
+     (rect.task) from the SAME journey.sectionFills entry, and the band's box
+     ends exactly where the task row begins -- measured gap 0px. The two
+     therefore merge into one slab and the only separation left is a hairline.
+     The band is structure, the task is content: draw the band as a wash so the
+     same hue reads at two strengths and the hierarchy comes back. */
+  rect.journey-section { fill-opacity: 0.55; }
+
   /* journey: task/section titles are stamped with a config fill + font */
   .label text { fill: ${text}; }
   text.task, text.journey-section { fill: ${text}; }
-  .face { stroke: ${p.hairline}; }
+  /* The score face was a pale disc with a 12%-black outline, so both the fill
+     and the edge disappeared against the card. A full edge colour turns it back
+     into a badge without darkening the fill (a dark fill would fight the eyes
+     and mouth, which are patched to label.secondary). */
+  .face { stroke: ${p.edge}; stroke-width: 1.25; }
   circle.actor-0, circle.actor-1, circle.actor-2,
   circle.actor-3, circle.actor-4, circle.actor-5 { stroke: ${p.hairline}; }
 
@@ -1658,7 +1809,10 @@ ${gitChipRules}
   rect.task { rx: 3px; ry: 3px; }
   .activeText0, .activeText1, .activeText2, .activeText3 { fill: ${p.activeText} !important; }
   .doneText0, .doneText1, .doneText2, .doneText3 { fill: ${p.doneText ?? (p.darkTint ? '#7FE3A0' : '#0B6B2F')} !important; }
-  .doneCritText0, .doneCritText1, .doneCritText2, .doneCritText3 { fill: #FFFFFF !important; }
+  /* doneCrit = done + crit: it is filled with the *done* tint (#d9ece4), so a
+     hard-coded white label measured 1.23:1. Every sibling rule picks its text
+     from the palette; this one now does too. */
+  .doneCritText0, .doneCritText1, .doneCritText2, .doneCritText3 { fill: ${p.doneText} !important; }
   .activeCritText0, .activeCritText1, .activeCritText2, .activeCritText3 { fill: ${p.activeText} !important; }
   /* When a bar is narrower than its label, mermaid moves the label outside and
      keeps the in-bar active/done/crit classes on it — those !important colours
@@ -1704,6 +1858,13 @@ ${gitChipRules}
   .labelBox { rx: ${cornerSmall}px; ry: ${cornerSmall}px; }
   .mindmap-node rect { rx: ${corner}px; ry: ${corner}px; }
 
+  /* timeline periods / treemap group edges */
+${scaleRules}
+
+  /* mermaid brightens every timeline event box by 20% on top of an already pale
+     fill, which is what made the event row read as "uncoloured". */
+  .eventWrapper { filter: none; }
+
   /* kanban columns */
 ${kanbanRules}
 
@@ -1725,6 +1886,12 @@ ${kanbanRules}
      #444444 attribute — the only stable hook is the attribute itself. */
   [stroke="#444444"] { stroke: ${p.edge}; }
   [fill="#444444"] { fill: ${text}; }
+
+  /* treemap multiplies its cScale fill by 0.6 (sections) and 0.3 (leaves); with
+     a pastel scale that landed every cell within a few percent of the card and
+     the chart read as an empty grid (closest pair measured 1.00:1). The scale
+     is a solid now, so let it through at full strength. */
+  .treemapSection rect, .treemapLeafGroup rect, .treemapLeaf rect { fill-opacity: 1 !important; }
 
   /* architecture-beta: the built-in service icons carry a hard-coded #087ebf
      inline background; put the system hue behind the white glyphs. */
@@ -1817,7 +1984,7 @@ const APPLE_SCHEME_CONFIG = {
       actorColours: ['#B7DAFF', '#B3ECCB', '#FFD9A8', '#FFC2D0', '#E4C6F7', '#B7E7EF'],
     },
     c4: c4ConfigFor(APPLE_LIGHT),
-    sankey: { linkColor: APPLE_LIGHT.edge },
+    sankey: { linkColor: 'gradient' },
   },
   dark: {
     journey: {
@@ -1826,7 +1993,7 @@ const APPLE_SCHEME_CONFIG = {
       actorColours: ['#2A4E7A', '#1F5C3B', '#6B4A22', '#6B3145', '#553572', '#215C66'],
     },
     c4: c4ConfigFor(APPLE_DARK),
-    sankey: { linkColor: APPLE_DARK.edge },
+    sankey: { linkColor: 'gradient' },
   },
 }
 
@@ -1839,52 +2006,6 @@ const APPLE_SCHEME_CONFIG = {
  * DESIGN_PALETTES below (sourced from each project's published tokens).
  * ------------------------------------------------------------------------- */
 
-/** Parse #rgb/#rrggbb to {r,g,b}. */
-const rgbOf = (hex) => {
-  const value = String(hex).replace('#', '')
-  const full = value.length === 3 ? value.split('').map((c) => c + c).join('') : value
-  const n = Number.parseInt(full, 16)
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
-}
-
-/** {r,g,b} (already in range) to #rrggbb. */
-const hexOf = ({ r, g, b }) => `#${[r, g, b]
-  .map((n) => Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0'))
-  .join('')}`
-
-/** Mix two colours; `weight` is the portion of `a` (0..1). */
-const mix = (a, b, weight) => {
-  const x = rgbOf(a)
-  const y = rgbOf(b)
-  return hexOf({
-    r: x.r * weight + y.r * (1 - weight),
-    g: x.g * weight + y.g * (1 - weight),
-    b: x.b * weight + y.b * (1 - weight),
-  })
-}
-
-/** WCAG relative luminance. */
-const luminance = (hex) => {
-  const { r, g, b } = rgbOf(hex)
-  const channel = (value) => {
-    const n = value / 255
-    return n <= 0.03928 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4
-  }
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-}
-
-/** WCAG contrast ratio between two colours. */
-const contrast = (a, b) => {
-  const x = luminance(a)
-  const y = luminance(b)
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
-}
-
-/** White or near-black, whichever reads better on `color`. */
-const bestText = (color) => (contrast(color, '#FFFFFF') >= contrast(color, '#111111') ? '#FFFFFF' : '#111111')
-
-/** Same-hue legible text colour on this scheme's tint (stronger, not pastel). */
-const strongOnTint = (color, mode) => (mode === 'dark' ? mix(color, '#FFFFFF', 0.18) : mix(color, '#000000', 0.2))
 
 /** Turn a design system's solid palette into the factory's full palette. */
 const buildPalette = ({ mode, surface, separator, label, edge, hues, radius = 8 }) => {
@@ -1914,7 +2035,40 @@ const buildPalette = ({ mode, surface, separator, label, edge, hues, radius = 8 
   const yellowEdge = mode === 'dark' ? mix(rawYellow, '#FFFFFF', 0.85) : mix(rawYellow, '#000000', 0.82)
   const deepBlue = mix(hues.blue, '#000000', mode === 'dark' ? 0.35 : 0.22)
   const onDeep = contrast(deepBlue, '#FFFFFF') >= 4.5 ? '#FFFFFF' : '#111111'
-  const activeBase = mode === 'dark' ? hues.blue : deepBlue
+  /* `activeText` is the label colour for the gantt active bar, and that bar is
+     now the design system's own solid blue in both schemes — not `deepBlue`. */
+  const activeBase = hues.blue
+
+  /* Solid fills for the diagram types where colour *encodes* a category rather
+     than decorating a node: C4 element classes, timeline periods, treemap
+     groups, gantt task states. A tint cannot do that job — twelve 16% tints sit
+     within a couple of percent of each other and of the card (measured: the
+     closest pair of treemap cells was 1.00:1, i.e. identical), so the reader
+     gets no information from the palette. A hue can.
+     Each solid is walked toward black until WHITE text clears 4.5:1, because
+     the design systems pick their step-9 solids for large text, and a 12px node
+     label is not large text. Dark mode uses the same map on purpose: a
+     saturated fill separates from a near-black card by chroma even when its
+     luminance is close, and a semantic colour should not change between schemes. */
+  const solid = {}
+  for (const [name, hue] of Object.entries(rawHues)) {
+    let fill = hue
+    for (let i = 0; i < 12 && contrast(fill, '#FFFFFF') < 4.5; i += 1) {
+      fill = mix('#000000', fill, 0.12)
+    }
+    solid[name] = fill
+  }
+  /* A tint one step stronger than `tint`, for shapes that must separate from a
+     surface without becoming solid (gantt bars, journey faces).
+     Both maps live here because the colour helpers below are declared after the
+     hand-written `quiet`/`apple` palettes and cannot run at their load time; the
+     variables read them as `p.solid?.x ?? <old tint>`, so those two variants keep
+     their previous look instead of regressing. */
+  const tintStrong = {}
+  for (const [name, hue] of Object.entries(hues)) {
+    tintStrong[name] = mix(hue, card, mode === 'dark' ? 0.5 : 0.34)
+  }
+
   return {
     mode,
     card,
@@ -1926,11 +2080,22 @@ const buildPalette = ({ mode, surface, separator, label, edge, hues, radius = 8 
     sys: hues,
     tint,
     tintAlt,
-    nodeFill: mode === 'dark' ? mix(card, '#FFFFFF', 0.06) : '#FFFFFF',
-    rowAlt: mode === 'dark' ? mix(card, '#FFFFFF', 0.05) : mix(card, '#000000', 0.02),
+    /* `mix(a, b, w)` returns `a*w + b*(1-w)`, so the FIRST argument is the small
+       fraction. These two had the card as the small share, which produced a
+       near-white node/cell fill in every dark variant (#f1f1f1 on a #1B1B1C
+       card) while the text stayed dark-mode light — kanban cards measured
+       1.03:1. Read as "lift the card 6% toward white", which is what the light
+       branch has always meant. */
+    nodeFill: mode === 'dark' ? mix('#FFFFFF', card, 0.06) : '#FFFFFF',
+    rowAlt: mode === 'dark' ? mix('#FFFFFF', card, 0.05) : mix('#000000', card, 0.02),
+    solid,
+    onSolid: Object.fromEntries(Object.keys(solid).map((name) => [name, '#FFFFFF'])),
+    tintStrong,
     labelText: strongOnTint(hues.purple, mode),
     taskBkg: mix(hues.blue, card, mode === 'dark' ? 0.42 : 0.24),
-    textOutside: label.secondary,
+    /* Text drawn outside a gantt bar sits on the bar's own pale tint, where the
+       secondary colour measured 4.34:1. The primary label colour clears 9:1. */
+    textOutside: label.primary,
     headingShades: [hues.blue, hues.green, hues.orange, hues.pink].map((c) => strongOnTint(c, mode)),
     doneText: strongOnTint(hues.green, mode),
     onDeep,
@@ -1985,14 +2150,22 @@ function quietPalette(mode) {
  * the system" still reads. C4 writes these as inline styles; text is re-painted
  * to the label colour by themeCSS because C4 hard-codes a white label colour.
  */
-function c4ConfigFor(p) {
+function c4ConfigFor(rawPalette) {
+  const p = withSemantic(rawPalette)
   const config = {}
+  const solid = p.solid !== undefined
   for (const type of C4_ELEMENT_TYPES) {
     const hue = C4_HUE[type]
-    config[`${type}_bg_color`] = p.tint[hue]
+    /* C4's whole point is that the element class is readable at a glance:
+       person vs system vs external. Pastel tints measured 1.20:1 (person),
+       1.20:1 (system) and 1.01:1 (external, which used the card surface
+       itself), i.e. three categories that differ by a couple of percent. The
+       solid ramp carries the class; the border becomes the card colour so the
+       boxes read as separate plates rather than as outlined pastel cards. */
+    config[`${type}_bg_color`] = solid ? p.tintStrong[hue] : p.tint[hue]
     config[`${type}_border_color`] = p.sys[hue]
-    config[`external_${type}_bg_color`] = p.fill
-    config[`external_${type}_border_color`] = p.separator
+    config[`external_${type}_bg_color`] = solid ? p.tintStrong.gray : p.fill
+    config[`external_${type}_border_color`] = solid ? p.sys.gray : p.separator
   }
   return config
 }
@@ -2015,12 +2188,12 @@ const makeVariant = (light, dark) => ({
     light: {
       journey: journeyConfigFor(light),
       c4: c4ConfigFor(light),
-      sankey: { linkColor: light.edge },
+      sankey: { linkColor: 'gradient' },
     },
     dark: {
       journey: journeyConfigFor(dark),
       c4: c4ConfigFor(dark),
-      sankey: { linkColor: dark.edge },
+      sankey: { linkColor: 'gradient' },
     },
   },
 })
