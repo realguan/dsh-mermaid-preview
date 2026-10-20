@@ -2267,6 +2267,30 @@ const SETTLE_MS = 250
  */
 const RETRY_MS = [400, 900, 1800]
 
+/**
+ * How far outside the viewport a diagram may start rendering, in pixels.
+ *
+ * A Mermaid render costs 20-190ms of main thread and is 95% of this plugin's
+ * work; a diagram the reader never scrolls to is work nobody sees. So a card
+ * below the fold waits for the visibility observer instead of rendering at
+ * mount — a conversation with thirty diagrams in its history now renders the
+ * two or three that are actually on screen. The margin is generous on purpose:
+ * the work starts while the card is still off screen, so it is normally ready
+ * before the reader arrives.
+ */
+const VISIBLE_MARGIN_PX = 400
+
+/** The same margin as CSS `rootMargin` accepts it. */
+const VISIBLE_MARGIN = `${VISIBLE_MARGIN_PX}px 0px`
+
+/**
+ * Bounds of the rendered-diagram cache. A cache entry is one SVG string
+ * (20-80KB for the diagrams measured); 40 entries keeps the worst case around
+ * 3MB, and the byte bound keeps that true if a message contains one huge chart.
+ */
+const CACHE_ENTRIES = 40
+const CACHE_BYTES = 4 * 1024 * 1024
+
 /** Padding left around the diagram by the viewer's fit-to-window scale. */
 const ZOOM_PAD = 40
 
@@ -2502,6 +2526,13 @@ const DICT = {
 const MERMAID_HEAD = /^(?:graph|flowchart(?:-elk)?|sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|quadrantChart|requirementDiagram|gitGraph|mindmap|timeline|(?:sankey|xychart|block|packet|treemap)(?:-beta)?|radar-beta|architecture-beta|kanban|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment|zenuml|info)\b/
 
 /**
+ * Diagram statements that attach behaviour instead of only drawing. Mermaid
+ * binds these as closures over the diagram it parsed, so a replayed SVG string
+ * comes back inert — such a fence is never cached.
+ */
+const INTERACTIVE = /(?:^|\n)[ \t]*click\b/
+
+/**
  * Strip the front matter, directives, and comments Mermaid allows before the
  * first statement, then return that statement (leading whitespace removed).
  * @param code - the fence source.
@@ -2578,6 +2609,14 @@ const __plugin =  {
       fitMode: storedFitMode(),
       /** the shared theme menu, built on first open */
       menu: null,
+      /** cache key -> { svg, id, bytes }; insertion order is recency order */
+      cache: new Map(),
+      /** total size of the cached SVG strings, for the byte bound */
+      cacheBytes: 0,
+      /** the shared visibility observer, built on first record */
+      visible: null,
+      /** holder -> record, for the visibility observer's callback */
+      byHolder: new WeakMap(),
     }
 
     // The layout preference is global; the canvas CSS keys off this attribute.
@@ -2910,6 +2949,13 @@ const __plugin =  {
 
       /* ---- diagram viewport ------------------------------------------- */
       /* The card itself is the surface — no second box inside it. */
+      /* content-visibility:auto was measured here and rejected: it does cut
+         the insert/layout segment by 70% (15.0ms -> 4.3ms for nine diagrams,
+         1.3% of a pass), but a card the browser is skipping has only its
+         intrinsic size, so a never-scrolled diagram paints blank in a
+         full-page capture and prints blank, and the page height is wrong until
+         each card is rendered once. This is a reading surface; a diagram that
+         silently disappears when printed is not worth 1.3%. */
       .dsh-mermaid-canvas {
         display: block;
         /* NOT a scroll container: the diagram is always pinned to the column
@@ -3187,6 +3233,29 @@ const __plugin =  {
       return state.mermaid
     }
 
+    /**
+     * Start the engine download as soon as a fence looks like a diagram.
+     *
+     * The settle window and the CDN fetch used to run one after the other, so
+     * the first diagram in a conversation paid both: 250ms of quiet plus a ~1MB
+     * script plus DNS and TLS. Firing the fetch when the fence is *detected*
+     * overlaps them and takes the settle window off the critical path. The weak
+     * set bounds it to one attempt per block, so a streaming fence cannot queue
+     * a request per token, and the whole function is a no-op once the engine is
+     * on its way.
+     */
+    const prefetched = new WeakSet()
+    const prefetchEngine = (block) => {
+      if (window.mermaid !== undefined || state.mermaid !== null) return
+      if (prefetched.has(block)) return
+      prefetched.add(block)
+      const code = sourceOf(block)
+      if (code === null || !isMermaidFence(block, code)) return
+      // A failed prefetch stays invisible: the render that follows owns the
+      // error note and retries the load itself.
+      loadMermaid().catch(() => {})
+    }
+
     /** The active color scheme, from the shell's theme service or the system. */
     const themeScheme = () => {
       const theme = ctx.get('theme')
@@ -3201,17 +3270,39 @@ const __plugin =  {
     }
 
     // Keep a parse failure out of the page: this plugin renders its own note.
-    // The three flags before the theme config are the plugin's own contract, not
-    // theme data: a variant must never be able to drop them. Without
+    // The three flags after the variant are the plugin's own contract, not theme
+    // data: a variant must never be able to drop them. Without
     // suppressErrorRendering, any parse failure (including a half-written fence
     // during streaming) makes mermaid draw its own "Syntax error in text"
     // diagram into <body>, where it survives every later successful re-render.
-    const configure = (mermaid) => mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      suppressErrorRendering: true,
-      ...configForVariant(themeScheme(), state.variant),
-    })
+    //
+    // `initialize` is a process-global configuration call and it is *not* free:
+    // it deep-copies the whole config several times and rebuilds the base theme
+    // (a `new Theme()` plus ~95 colour operations, run twice) on every call.
+    // Measured at 2-3ms here, and the plugin used to pay it once per diagram per
+    // paint — 3.2% of a nine-diagram pass, and up to 15% of a message made of
+    // small diagrams. Nothing needs that: `mermaid.render` begins with its own
+    // internal `reset()`, which re-derives the per-render config from the site
+    // config, so the site config only has to be right, not freshly written. One
+    // call per (scheme, variant) is therefore enough, and the pair is exactly
+    // what the key holds.
+    let configuredKey = null
+    let configuredOn = null
+    /** @param scheme - the active colour scheme, read once by the caller. */
+    const configure = (mermaid, scheme) => {
+      const key = `${scheme}|${state.variant}`
+      // The instance check covers a shell that swaps `window.mermaid` for a
+      // fresh one, which would leave our key pointing at a config nobody applied.
+      if (configuredKey === key && configuredOn === mermaid) return
+      mermaid.initialize({
+        ...configForVariant(scheme, state.variant),
+        startOnLoad: false,
+        securityLevel: 'strict',
+        suppressErrorRendering: true,
+      })
+      configuredKey = key
+      configuredOn = mermaid
+    }
 
     // ---- DOM ------------------------------------------------------------
     /** The block's `[data-code-block-content]` body, when the layout has one. */
@@ -3254,8 +3345,59 @@ const __plugin =  {
       bannerLabel(block) === LANGUAGE || opensDiagram(code)
     )
 
+    /**
+     * Hand the main thread back to the browser for one turn.
+     *
+     * This is the difference between a serialized queue that *looks* polite and
+     * one that actually yields. Mermaid 11 replaces fastdom's
+     * `requestAnimationFrame` with `queueMicrotask` — its source says so:
+     * "requestAnimationFrame is too slow compared to queueMicrotask" — so every
+     * `await` inside `mermaid.render` resumes inside the same task. Nine
+     * cards repainting through a promise chain therefore ran as a small number
+     * of very long tasks (measured: 561ms of work, four long tasks, the longest
+     * 157ms) during which the browser could not paint, scroll or take input.
+     * One macrotask between jobs leaves the total work and the strict
+     * serialization untouched — two renders never overlap — and caps the
+     * longest block at one diagram. On this machine's full-corpus run Mermaid
+     * already returned to the event loop between renders, so the change shows no
+     * wall-clock difference there; it is insurance against the case the audit
+     * did measure (five renders in one uninterrupted 226ms task), and it is what
+     * makes the "off screen now, render later" hand-off observable.
+     *
+     * `MessageChannel` rather than `setTimeout(0)`: nested timers are clamped to
+     * 4ms after five levels, and a queue that yields on every job nests deeply.
+     * `scheduler.yield()` is preferred where the browser has it, because it
+     * marks the yield as such instead of looking like newly arrived work.
+     */
+    const yieldToMain = () => {
+      const scheduler = typeof window === 'undefined' ? undefined : window.scheduler
+      if (scheduler !== undefined && typeof scheduler.yield === 'function') {
+        return Promise.resolve(scheduler.yield()).then(() => undefined, () => undefined)
+      }
+      if (typeof MessageChannel !== 'function') {
+        return new Promise((resolve) => window.setTimeout(resolve, 0))
+      }
+      return new Promise((resolve) => {
+        // A fresh channel per yield costs one microtask and bundles no state
+        // between two jobs, which is worth more than the reusable-channel
+        // bookkeeping it saves.
+        const channel = new MessageChannel()
+        channel.port1.onmessage = () => {
+          channel.port1.close()
+          resolve()
+        }
+        channel.port2.postMessage(0)
+      })
+    }
+
+    /**
+     * Queue one render job. Jobs stay strictly serialized — mermaid keeps its
+     * configuration and its temporary SVG host in module scope, so two renders
+     * must never be in flight together — but each one now starts after a real
+     * yield instead of on the microtask right after its predecessor.
+     */
     const enqueue = (task) => {
-      const run = state.queue.then(task)
+      const run = state.queue.then(yieldToMain).then(task)
       state.queue = run.then(() => undefined, () => undefined)
       return run
     }
@@ -3296,6 +3438,14 @@ const __plugin =  {
     const fitReading = (record) => {
       const svg = record.canvas.querySelector('svg')
       if (svg === null || record.canvas.hidden) return
+      // Off screen, a measurement costs a synchronous layout for a card nobody
+      // is looking at. Drop the memo and let the visibility observer take the
+      // measurement when the card comes back into range — the SVG keeps its
+      // natural size and the stylesheet's `max-width` in the meantime.
+      if (record.visible === false) {
+        record.fitKey = undefined
+        return
+      }
       const size = naturalSize(svg)
       if (!(size.width > 0) || !(size.height > 0)) return
       const style = getComputedStyle(record.canvas)
@@ -3444,6 +3594,7 @@ const __plugin =  {
         if (state.menu !== null && state.menu.opener === known.theme) state.menu.close()
         if (known.canvasObserver !== undefined) known.canvasObserver.disconnect()
         if (known.copyTimer !== undefined) window.clearTimeout(known.copyTimer)
+        unwatchVisibility(known)
         known.holder.remove()
         state.records.delete(block)
       }
@@ -3526,6 +3677,12 @@ const __plugin =  {
         showSource: false,
         /** the current text rendered successfully */
         done: false,
+        /** `${scheme}|${variant}` the canvas was last painted with */
+        paintedKey: null,
+        /** the text changed while the card was off screen */
+        wantsPaint: false,
+        /** on screen (true), off screen (false), or not yet observed (undefined) */
+        visible: undefined,
         /** the current text exhausted its retries and shows the note */
         failed: false,
         /** "load" or "render", for the note's copy and accent */
@@ -3554,6 +3711,7 @@ const __plugin =  {
       holder.append(head, canvas, error)
       block.append(holder)
       state.records.set(block, record)
+      watchVisibility(record)
       if (typeof ResizeObserver === 'function') {
         const observer = new ResizeObserver(() => fitReading(record))
         observer.observe(canvas)
@@ -4129,6 +4287,171 @@ const __plugin =  {
       repaint()
     }
 
+    /**
+     * The rendered-diagram cache.
+     *
+     * A Mermaid render is 95% of this plugin's cost and is a pure function of
+     * the fence text plus the palette it is drawn in, yet three ordinary
+     * situations repeat it for an identical answer: a reader toggling the theme
+     * back to one they already used, React replacing a message's DOM (which
+     * drops the holder and makes the block look new), and the same diagram
+     * appearing twice in one message. Caching the finished SVG string turns each
+     * of those from a 20-190ms render into a string insert.
+     *
+     * Insertion order is recency order: a hit is re-inserted, an overflow
+     * evicts from the front, and the map is bounded by both entry count and
+     * total bytes so one huge chart cannot pin hundreds of megabytes.
+     */
+    const cacheKeyOf = (palette, code) => `${palette}\n${code}`
+
+    /** Read one entry, refreshing its recency. */
+    const cacheGet = (key) => {
+      const entry = state.cache.get(key)
+      if (entry === undefined) return undefined
+      state.cache.delete(key)
+      state.cache.set(key, entry)
+      return entry
+    }
+
+    /** Store one entry, evicting least-recently-used first past either bound. */
+    const cacheSet = (key, entry) => {
+      if (entry.bytes > CACHE_BYTES) return
+      const previous = state.cache.get(key)
+      if (previous !== undefined) {
+        state.cache.delete(key)
+        state.cacheBytes -= previous.bytes
+      }
+      state.cache.set(key, entry)
+      state.cacheBytes += entry.bytes
+      while (state.cache.size > CACHE_ENTRIES || state.cacheBytes > CACHE_BYTES) {
+        const oldest = state.cache.keys().next()
+        if (oldest.done === true) break
+        const dropped = state.cache.get(oldest.value)
+        state.cache.delete(oldest.value)
+        state.cacheBytes -= dropped === undefined ? 0 : dropped.bytes
+      }
+    }
+
+    /** Drop everything; called from the fiber teardown. */
+    const cacheClear = () => {
+      state.cache.clear()
+      state.cacheBytes = 0
+    }
+
+    /**
+     * Re-home one cached SVG on the id of the insertion that is about to use it.
+     *
+     * Mermaid namespaces everything it emits with the id it was handed — the
+     * `<svg id>` itself, every `url(#…)` marker and arrowhead reference, and the
+     * `<style>` selectors it compiles under `#<id>`. Two cards replaying the
+     * same cached string would therefore carry duplicate ids, and `url(#…)`
+     * resolves to whichever node the document finds first, so removing that card
+     * would silently break the other one's arrowheads. Rewriting every
+     * occurrence of the old id makes each insertion self-contained. The id is
+     * this plugin's own and unique per render, so a literal replacement cannot
+     * collide with anything belonging to the diagram.
+     */
+    const reidentify = (svg, from, to) => (from === to ? svg : svg.split(from).join(to))
+
+    /**
+     * Put a finished SVG on the card and settle the record. Shared by the fresh
+     * and the cached path, so that a cache hit is indistinguishable to the rest
+     * of the plugin.
+     */
+    const commit = (record, svg, palette) => {
+      record.canvas.innerHTML = svg
+      record.done = true
+      record.failed = false
+      record.failures = 0
+      record.paintedKey = palette
+      applyView(record)
+      fitReading(record)
+      record.block.dataset.dshMermaid = 'done'
+    }
+
+    // ---- visibility -----------------------------------------------------
+    // A Mermaid render is 95% of this plugin's cost (measured: 698ms of a 738ms
+    // nine-diagram pass) and it is per-diagram, so the cheapest render is the
+    // one nobody asked to see. A conversation keeps its whole history in the
+    // DOM, and its history holds diagrams the reader scrolled past long ago;
+    // mounting such a conversation used to render every one of them. Parking a
+    // job until the card is within VISIBLE_MARGIN of the viewport is the single
+    // largest saving available, and it costs a reader nothing: the work starts
+    // before the card arrives, and a fast scroll shows the plain fence for one
+    // settle window instead of showing a frozen tab.
+
+    /**
+     * Is this block near the viewport *right now*?
+     *
+     * The observer is the right trigger for a parked render, but it cannot
+     * answer the question that decides whether to start one: its first callback
+     * arrives a frame after `observe()`, and the decision is taken in the same
+     * task the record is created in. So the first sighting asks the layout
+     * directly — one `getBoundingClientRect()` against a render that costs two
+     * to three orders of magnitude more. The block is measured rather than the
+     * canvas because the canvas is still `hidden` at this point and would report
+     * a zero rect.
+     */
+    const onScreen = (block) => {
+      const rect = block.getBoundingClientRect()
+      // A block with no box at all is not laid out — a collapsed surface or a
+      // background tab. Do not turn that into "off screen": the observer will
+      // report the truth as soon as it has one, and a collapsed panel would
+      // otherwise never render.
+      if (rect.width === 0 && rect.height === 0) return true
+      const height = window.innerHeight || 0
+      return rect.bottom >= -VISIBLE_MARGIN_PX && rect.top <= height + VISIBLE_MARGIN_PX
+    }
+
+    /**
+     * Record one block for the visibility observer, or drop it.
+     *
+     * The observed node is the holder, not the canvas: the canvas stays `hidden`
+     * until it has a diagram in it, and an observer on a `display:none` box can
+     * only ever report "not visible" — a parked card would never come back. The
+     * holder is visible from the moment the card exists, so its intersection is
+     * an honest answer to "would the reader see this".
+     *
+     * `record.visible` starts unknown, which the guard treats as visible: a
+     * platform without the observer, and the first frame of a fresh card, both
+     * behave exactly as the plugin did before — a render attempt worth paying
+     * for.
+     */
+    const watchVisibility = (record) => {
+      const observerFor = () => {
+        if (state.visible !== null) return state.visible
+        if (typeof IntersectionObserver !== 'function') return null
+        state.visible = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            const target = state.byHolder.get(entry.target)
+            if (target === undefined) continue
+            target.visible = entry.isIntersecting
+            if (!entry.isIntersecting) continue
+            // Came into range: take the fit measurement that was skipped while
+            // the card was off screen, and pay for the render that was parked
+            // because nobody was looking.
+            fitReading(target)
+            if (target.wantsPaint) {
+              target.wantsPaint = false
+              if (target.block.isConnected) renderBlock(target.block, true)
+            }
+          }
+        }, { rootMargin: VISIBLE_MARGIN })
+        return state.visible
+      }
+      const observer = observerFor()
+      if (observer === null) return
+      state.byHolder.set(record.holder, record)
+      observer.observe(record.holder)
+    }
+
+    /** Stop watching a holder whose record was replaced or disposed. */
+    const unwatchVisibility = (record) => {
+      if (state.visible === null) return
+      state.byHolder.delete(record.holder)
+      state.visible.unobserve(record.holder)
+    }
+
     /** One diagram, rendered with the current theme. */
     const paint = async (record) => {
       // A repaint or a re-render replaces the SVG; a viewer showing the old one
@@ -4136,11 +4459,30 @@ const __plugin =  {
       if (state.viewer !== null && state.viewer.record === record) closeViewer()
       const mermaid = await loadMermaid()
       if (state.disposed || !record.block.isConnected) return
-      configure(mermaid)
+      // One read of the scheme, used for the configuration, the palette and the
+      // cache key: two reads could straddle a theme switch and describe a
+      // configuration that was never applied.
+      const scheme = themeScheme()
+      const palette = `${scheme}|${state.variant}`
+      const code = record.code
+      configure(mermaid, scheme)
+      // The card is already showing this diagram in this palette. Only a
+      // redundant theme event or a repaint racing a paint reaches here, and a
+      // Mermaid render is three orders of magnitude more expensive than this
+      // comparison, so the guard pays for itself the first time it fires.
+      if (record.done === true && record.paintedKey === palette) return
+
       const id = `${PLUGIN_ID}-${(state.uid += 1)}`
+      const key = cacheKeyOf(palette, code)
+      const cached = cacheGet(key)
+      if (cached !== undefined) {
+        commit(record, reidentify(cached.svg, cached.id, id), palette)
+        return
+      }
+
       let result
       try {
-        result = await mermaid.render(id, record.code)
+        result = await mermaid.render(id, code)
       } catch (error) {
         // mermaid's temp nodes are `d<id>` (SVG host) and `i<id>` (sandbox
         // iframe). A failed render is allowed to leave them behind, which is
@@ -4150,7 +4492,21 @@ const __plugin =  {
         throw error
       }
       if (state.disposed || !record.block.isConnected) return
-      record.canvas.innerHTML = result.svg
+      // A newer snapshot of the fence, or another paint, got here while this
+      // render was running. Committing would put the *old* picture on the card
+      // and stamp it as current — and because `renderBlock` treats "record done
+      // and same text" as nothing to do, a card could then keep showing a
+      // diagram its text no longer matches, for good. Whatever superseded this
+      // render owns the card now; drop the result. (The cache write below is
+      // still correct: its key carries the text this render was made from.)
+      if (record.code !== code) return
+      // A `click` statement is bound as a closure over the diagram mermaid just
+      // parsed, so a replayed string would come back inert. Those diagrams are
+      // simply not cached; everything else is.
+      if (!INTERACTIVE.test(code)) {
+        cacheSet(key, { svg: result.svg, id, bytes: result.svg.length })
+      }
+      commit(record, result.svg, palette)
       if (typeof result.bindFunctions === 'function') {
         try {
           result.bindFunctions(record.canvas)
@@ -4158,12 +4514,6 @@ const __plugin =  {
           /* interaction binding is best effort */
         }
       }
-      record.done = true
-      record.failed = false
-      record.failures = 0
-      applyView(record)
-      fitReading(record)
-      record.block.dataset.dshMermaid = 'done'
     }
 
     /**
@@ -4224,6 +4574,15 @@ const __plugin =  {
       // replaced by this card's own header while the first SVG is still being
       // fetched, so the block never flashes "代码块" and then changes shape.
       applyView(record)
+      // Off screen: note what is owed and let the visibility observer collect
+      // it. `pending` goes back to false so a later settle is not blocked by a
+      // job that is not actually running.
+      if (record.visible === false || (record.visible === undefined && !onScreen(block))) {
+        record.visible = false
+        record.wantsPaint = true
+        record.pending = false
+        return undefined
+      }
       return enqueue(() => paint(record).then(
         () => { record.pending = false },
         (error) => { record.pending = false; onFailure(block, record, error) },
@@ -4233,6 +4592,7 @@ const __plugin =  {
     /** Wait for a fence to stop changing before rendering it (streaming). */
     const schedule = (block, delay = SETTLE_MS, force = false) => {
       if (state.disposed || !block.isConnected) return
+      prefetchEngine(block)
       const pending = state.timers.get(block)
       if (pending !== undefined) window.clearTimeout(pending)
       state.timers.set(block, window.setTimeout(() => {
@@ -4254,15 +4614,52 @@ const __plugin =  {
       for (const block of root.querySelectorAll('.md-code-block')) schedule(block)
     }
 
+    /**
+     * Redraw every diagram for the current palette.
+     *
+     * Two filters keep this from being the most expensive thing the plugin can
+     * do. A card already painted in this palette is skipped outright — that is
+     * what makes the second of two identical `theme/change` events free. And an
+     * off-screen card is only *marked*: its render is owed, and the visibility
+     * observer pays for it if the reader ever scrolls back to it. Repainting a
+     * conversation's whole history for a theme switch used to be visible as a
+     * freeze; now only what is on screen is redrawn.
+     */
     const repaint = () => {
+      const palette = `${themeScheme()}|${state.variant}`
       for (const record of state.records.values()) {
         if (!record.block.isConnected || record.code === null || record.failed) continue
+        if (record.done === true && record.paintedKey === palette) continue
+        if (record.visible === false) {
+          record.wantsPaint = true
+          continue
+        }
         enqueue(() => paint(record).then(
           () => {},
           (error) => onFailure(record.block, record, error),
         ))
       }
     }
+
+    // ---- theme ---------------------------------------------------------
+    // One preconnect, not a preload: it downloads nothing, and it takes the DNS
+    // lookup and TLS handshake off the critical path of the first diagram
+    // instead of leaving them to run after the settle window.
+    ctx.effect(() => {
+      let origin
+      try {
+        origin = new URL(MERMAID_CDN).origin
+      } catch {
+        return () => {}
+      }
+      const link = document.createElement('link')
+      link.rel = 'preconnect'
+      link.href = origin
+      link.crossOrigin = ''
+      link.dataset.dshMermaidPreconnect = '1'
+      ;(document.head ?? document.documentElement).append(link)
+      return () => link.remove()
+    }, `${PLUGIN_ID}: preconnect`)
 
     // ---- lifecycle ------------------------------------------------------
     const observer = new MutationObserver((mutations) => {
@@ -4272,20 +4669,26 @@ const __plugin =  {
       if (shown !== null && !shown.block.isConnected) closeViewer()
       for (const mutation of mutations) {
         const target = mutation.target
+        // Streaming edits land as characterData on the fence's text node, and as
+        // a replaced text node (a childList mutation whose added node is not an
+        // element). Both mean "the fence changed", so both have to be traced
+        // back to the owning block — and a characterData target *is* the text
+        // node, not an element, which is why the element is resolved first and
+        // every check then runs against it.
+        const element = target.nodeType === 1 ? target : target.parentElement
         // Our own DOM must never look like "the fence changed": the note and
         // the buttons live inside the holder, the viewer and the theme menu are
         // siblings of the whole conversation, and the attributes we toggle are
-        // ours alone.
-        if (target.nodeType === 1 && target.closest('[data-dsh-mermaid-holder], [data-dsh-mermaid-zoom], [data-dsh-mermaid-theme-menu]') !== null) continue
+        // ours alone. This test has to come before the block lookup, or a write
+        // inside the holder would schedule a render of the fence it belongs to.
+        if (element !== null && typeof element.closest === 'function'
+          && element.closest('[data-dsh-mermaid-holder], [data-dsh-mermaid-zoom], [data-dsh-mermaid-theme-menu]') !== null) continue
         if (mutation.type === 'attributes') {
           const name = mutation.attributeName
           if (name === HIDDEN || (typeof name === 'string' && name.startsWith('data-dsh-mermaid'))) continue
         }
-        // Streaming edits land as characterData on the fence's text node, and as
-        // a replaced text node (a childList mutation whose added node is not an
-        // element). Both mean "the fence changed" — find the owning block.
-        if (target.nodeType === 1) {
-          const owner = target.closest('.md-code-block')
+        if (element !== null && typeof element.closest === 'function') {
+          const owner = element.closest('.md-code-block')
           if (owner !== null) schedule(owner)
         }
         for (const node of mutation.addedNodes) {
@@ -4322,6 +4725,12 @@ const __plugin =  {
           state.menu.dispose()
           state.menu = null
         }
+        if (state.visible !== null) {
+          state.visible.disconnect()
+          state.visible = null
+        }
+        state.byHolder = new WeakMap()
+        cacheClear()
         for (const record of state.records.values()) {
           record.canvasObserver?.disconnect()
           if (record.copyTimer !== undefined) window.clearTimeout(record.copyTimer)
@@ -4338,7 +4747,39 @@ const __plugin =  {
       }
     }, `${PLUGIN_ID}: observer`)
 
-    ctx.on('theme/change', repaint)
+    /**
+     * Repaint after a theme signal.
+     *
+     * Deferred by one macrotask, because the signal can arrive before the colour
+     * scheme has been committed: `themeScheme()` would then read the old scheme,
+     * the palette guard would correctly conclude there is nothing to repaint, and
+     * the old palette would stay on screen until the next switch — the exact
+     * "I changed it and nothing happened" failure. Deferring lets the commit
+     * land first.
+     *
+     * Two signals, one idempotent handler. `theme/change` is the intended one;
+     * the `data-ds-dark-theme` attribute on `<body>` — which this plugin's own
+     * stylesheet already keys off — is the one that is written *by* the commit,
+     * so watching it makes the ordering irrelevant rather than merely unlikely.
+     * The palette guard makes the duplicate repaint free.
+     */
+    const onThemeSignal = () => {
+      // The palette is part of the key, so a real switch makes the guard miss on
+      // its own; forgetting it here just means another consumer of the global
+      // mermaid instance cannot leave this plugin drawing with a stale config.
+      configuredKey = null
+      void yieldToMain().then(() => {
+        if (!state.disposed) repaint()
+      })
+    }
+    ctx.on('theme/change', onThemeSignal)
+    ctx.effect(() => {
+      const target = document.body
+      if (target === null || typeof MutationObserver !== 'function') return () => {}
+      const watch = new MutationObserver(onThemeSignal)
+      watch.observe(target, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+      return () => watch.disconnect()
+    }, `${PLUGIN_ID}: theme attribute`)
     ctx.on('locale/change', () => {
       for (const record of state.records.values()) applyView(record)
       state.viewer?.refreshLabels()

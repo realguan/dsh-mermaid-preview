@@ -1,0 +1,3 @@
+# Benchmark output. Regenerate with `node bench/bench.mjs --label <name>`;
+# the JSON files are run artifacts, not sources.
+results-*.json

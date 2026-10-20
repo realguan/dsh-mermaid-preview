@@ -5,6 +5,106 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-20
+
+渲染得更少，而不是渲染得更快——因为 `mermaid.render` 本身就是全部开销。
+
+在 headless Chromium 里用 `bench/`（新增）跑真实插件产物、九图语料量出的事实：
+一次渲染的 95% 是 `mermaid.render` 自己（一组九图 698/738ms），
+`mermaid.initialize` 2–3%（小图可达 15%），DOM 插入 + 首次布局 2%。
+所以「把单次渲染做快」几乎没有空间，能拿的都在「少做一次」和「不要卡住主线程」。
+
+### Added
+
+- **渲染结果缓存。** `(配色, 源码)` → SVG 字符串，LRU 40 条 / 4MB，
+  `dispose` 时清空。主题来回切、React 重建消息 DOM、同一条消息里出现两张相同的
+  图，这三种情况以前都会整份重新渲染。实测九图一轮 **753ms → 14ms**。命中时重写
+  SVG 的 id（mermaid 把 `url(#…)`、`<style>` 选择器全按 id 命名空间化，两张卡片
+  共用 id 会让箭头指向别人）。带 `click` 语句的图不缓存。
+- **只渲染看得见的图。** `renderBlock` 先同步判一次「离视口近不近」，不在就先记
+  `wantsPaint`，交给 `IntersectionObserver` 在滚回来时补。实测九张图全部在屏幕外
+  时 `mermaid.render` **9 次 → 0 次**；这就是「打开一段历史很长的对话」的开销来源。
+  排版容器/后台标签页里拿不到盒子（rect 全 0）时按「可见」处理，避免永不渲染。
+- **`bench/`**：可复现的渲染成本基准（Playwright + 真实 `dist/client.js` +
+  九图语料），`node bench/bench.mjs --reps 9 --label baseline` 一条命令出表。
+  README 里写清了每个指标量的是什么、以及这些数字不能证明什么。
+
+### Changed
+
+- **每个渲染任务之间让出主线程。** mermaid 11 明确把 fastdom 的
+  `requestAnimationFrame` 换成了 `queueMicrotask`（源码注释：
+  "requestAnimationFrame is too slow compared to queueMicrotask"），
+  所以 `await mermaid.render()` 从不把控制权交回浏览器，一条 promise 链能把多张
+  图连成一个长任务。队列仍然严格串行（mermaid 的配置和临时 SVG host 都是模块级
+  状态），但每个任务前插一个宏任务（有 `scheduler.yield()` 就用它，否则
+  `MessageChannel`），单次阻塞上限降到一张图。
+- **`configure` 只在 `(scheme, variant)` 变化时调用。** `mermaid.initialize` 每次
+  都会深拷贝整份配置并重建 base 主题（约 95 次颜色运算，跑两遍）——实测 2–3ms，
+  以前是每张图每次重绘都付一遍（九图 3.2%，小图 15%）。`mermaid.render` 自己每次
+  开头都会 `reset()` 从 site config 重新推导 per-render 配置，所以 site config 只
+  要正确即可。顺手把 `securityLevel` / `suppressErrorRendering` 挪到主题配置**之后**
+  展开：注释一直写着「变体绝不能覆盖这三个标志」，原来的顺序其实允许覆盖。
+- **主题切换只重绘看得见的图。** 屏幕外的只标记待重绘，同一配色重复触发
+  `theme/change` 则一次渲染都不做。`theme/change` 延后一个宏任务再判定，因为事件
+  可能先于主题服务提交新配色，早读会读到旧配色。
+- **首个图表更快出现。** 静默窗口和 CDN 取脚本以前是串行的（250ms + 约 1MB 下载
+  + DNS/TLS），现在围栏一被识别就发预取，两者并行；并加了一条 `preconnect`。
+- **屏幕外的图不再做同步尺寸测量**，等滚进视口再量（`fitReading` 会清掉 memo，
+  期间 SVG 用自身尺寸 + 样式表的 `max-width`）。
+
+### Fixed
+
+- **「改了但没生效」的两个缺口。** 加缓存和可见性门控的本质是「很多时候故意什么都
+  不做」，每一处跳过都是潜在的陈旧画面，所以逐个排查并补上：
+  - **渲染途中的文本变化会被旧结果覆盖，且永久不修。** `mermaid.render` 期间围栏
+    又变了，旧结果回来后会把「已完成」和当前配色盖到卡片上；而 `renderBlock` 的
+    「已完成 + 文字没变 → 什么都不做」和 `paint` 的配色守卫都会因此跳过那张真正
+    该渲染的新图。现在 `paint` 记住自己渲染的是哪一版文字，回来发现已被取代就直接
+    丢弃结果（缓存写入仍然正确，它的 key 带的是那次渲染的文字）。**只有当单张图的
+    渲染超过 250ms 静默窗口时才会触发**，普通图基本遇不到，但几十个节点的图会。
+    已用「把 render 拉长到 400ms」的可复现用例验证：去掉这道守卫，卡片会停在旧图
+    并一直标着 `done`，直到别的事件碰巧触发一次重绘才恢复；加上后正确收敛。
+  - **主题事件可能早于配色提交。** `theme/change` 若先于主题服务提交新配色到达，
+    `themeScheme()` 读到的是旧值，配色守卫会「正确地」判断无事可做，于是旧主题留在
+    屏幕上直到下次切换。现在读取延后一个宏任务，并且**同时监听 `<body>` 上的
+    `data-ds-dark-theme`**（本插件样式表本来就依赖这个属性）——那个属性是提交动作
+    写出来的，所以事件顺序不再重要；配色守卫让重复触发不花任何渲染。
+- **原地更新的围栏文本以前永远不会重新渲染。** `MutationObserver` 里
+  `if (target.nodeType === 1)` 把 `characterData` 的 target（文本节点，nodeType 3）
+  全丢了，而 React 更新文本子节点正是原地改 `nodeValue`。现在文本节点先解析到
+  父元素、再走原本的「是不是我们自己的 DOM」判断。已验证：原地改字后 2 个节点
+  的图变成 3 个节点；旧产物在同样操作下状态永远停在 `done`。
+
+### Rejected
+
+- **`content-visibility: auto` + `contain-intrinsic-size`（画布上）。** 实测确实把
+  插入 + 布局段砍掉 70%（九图 15.0ms → 4.3ms），但只占一轮的 1.3%，代价是被跳过
+  的卡片只有内在尺寸：从未滚到过的图在整页截图和打印里是空白，且每张图首次渲染前
+  页面高度是错的。阅读场景里「打印时图消失」不值 1.3%。
+- **`mermaid.render(id, code, container)` 的隔离容器。** 一开始测出 −27%，把节奏
+  对齐（插件是 250ms 静默后才渲染，连续渲染本身便宜 15–20%）之后只剩 −1.7%。
+  临时节点插到哪不影响 mermaid 量什么。
+- **`securityLevel: 'loose'` 跳过 DOMPurify**（省约 2.2ms/次）：渲染的是模型输出的
+  markdown，净化不是可选项。
+- **`htmlLabels: false` 换掉 foreignObject 测量**：实测更慢（48ms vs 42ms）。
+
+### Measured
+
+同一台机器、同一语料、`--reps 7`，改前 → 改后：
+
+| 指标 | 改前 | 改后 |
+| --- | --- | --- |
+| 九图一轮 `init` | 30.0ms | 0 |
+| 九图一轮 `insert` | 15.0ms | 15.1ms（未变，见 Rejected） |
+| 九图一轮合计 | 815ms | 763ms（−6.4%） |
+| 屏幕外九图的 `mermaid.render` 次数 | 9 | 0 |
+| 同配色再来一轮 | 753ms | 14ms（缓存命中 −98%） |
+| 主题切走再切回 | 整份重渲染 | 0 次渲染 |
+| 视觉回归（DPR 2 整页像素比对） | — | 0 / 9,891,840 像素差异 |
+
+`mermaid.render` 单项在多次运行间有 ±10% 的机器噪声，所以上表只列可归因的差
+（`init` 归零、缓存命中、屏幕外不渲染）；`render` 本身的波动不作为收益。
+
 ## [0.5.1] - 2026-10-17
 
 让图真正「自适应窗口」，并补上新图型与 C4 的主题覆盖。

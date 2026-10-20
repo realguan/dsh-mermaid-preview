@@ -102,18 +102,46 @@ BOM、`%%` 行注释、`%%{ … }%%` 指令、`---` front matter。
 
 ```
 MutationObserver（childList + subtree + characterData）
-      │  任何新增 / 文本变化
+      │  任何新增 / 文本变化（文本节点向上解析到所属 block）
       ▼
 schedule(block)  250ms 静默去抖     ← 流式输出期间不会反复渲染
+      │         同时 preconnect + 预取 mermaid UMD（与静默窗口并行）
       ▼
 renderBlock → sourceOf → isMermaidFence
       ▼
-enqueue(...)     串行队列             ← 一屏多图不会并发挤爆主线程
+是否在视口内（可见性门控）           ← 屏幕外的图不渲染，滚到再渲染
+      │  是
       ▼
-paint: loadMermaid → configure（configForVariant(scheme, variant)）→ mermaid.render
+enqueue(...)     串行队列 + 每个任务之间的宏任务让出   ← 单次阻塞 ≤ 一张图
       ▼
-注入 SVG + applyView + 尺寸测量
+paint: loadMermaid → configure（每 (scheme, variant) 一次）→ 命中 SVG 缓存？
+      │                                                      │ 否
+      │                                                      ▼
+      │                                             mermaid.render → 写入缓存
+      ▼
+注入 SVG（缓存命中时重写 id）+ applyView + 尺寸测量
 ```
+
+- **只渲染看得见的图。** 一次 `mermaid.render` 是本插件 95% 的开销
+  （实测九图一轮 698/738ms），而一段对话的历史里大部分图读者早已滚过去。因此
+  `renderBlock` 先问「这块现在离视口近吗」（同步 `getBoundingClientRect`，配一个
+  `IntersectionObserver` 兜住后续滚动）：不在就只记一笔 `wantsPaint`，等滚回来再
+  渲染。实测九张图全部在屏幕外时，`mermaid.render` 从 9 次降到 0 次。
+- **渲染结果缓存**（`(scheme, variant, 源码)` → SVG 字符串，LRU 40 条 / 4MB）：
+  主题来回切、React 重建消息 DOM、同一条消息里出现两张相同的图，这三种情况都会
+  重复同一次渲染。命中时只做字符串插入（实测九图一轮 753ms → 14ms），并重写 SVG
+  的 id，避免两张卡片共用 id 导致 `url(#…)` 指向别人的 marker。带 `click` 语句的
+  图不缓存——那是 mermaid 挂在解析结果上的闭包，重放字符串不会带上。
+- **每个渲染任务之间让出主线程。** mermaid 11 把 fastdom 的 `requestAnimationFrame`
+  换成了 `queueMicrotask`，所以 `await mermaid.render()` 从不把控制权还给浏览器；
+  一条 promise 链可以把多张图连成一个长任务。串行队列保持严格串行，但每个任务前
+  插一个宏任务（`scheduler.yield()` / `MessageChannel`），单次阻塞上限降到一张图。
+- **`configure` 只在 `(scheme, variant)` 变化时调用。** `mermaid.initialize` 每次
+  都会深拷贝整份配置并重建 base 主题（2–3ms），而 `mermaid.render` 自己每次开头
+  都会 `reset()` 从 site config 重新推导，所以 site config 只要「是对的」，不必
+  「刚写过」。
+- **主题切换只重绘看得见的图**，屏幕外的只标记待重绘；同一配色重复触发
+  `theme/change` 则一次渲染都不做。
 
 - **Mermaid 按需加载**：只有真的出现候选围栏才去取 UMD（`window.mermaid` 已存在则
   直接复用）。加载失败会清掉缓存，允许后续围栏重试。
