@@ -5,53 +5,121 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-20
+## [0.6.0] - 2026-10-20
 
-**去掉 CDN：Mermaid 引擎随包附带，插件不再联网。**
+一版三件事：**少渲染**（屏幕外不渲染、SVG 缓存、陈旧保护）、
+**主题**（语义色分层、深色模式修复、可读性）、
+**离线**（Mermaid 引擎随包附带，插件不再联网）。
 
-之前引擎是运行时从 jsDelivr 取的 `mermaid@11.17.2` UMD。断网、内网、隔离网，或者
-只是 jsDelivr 自己抽风，围栏就永远停在代码块状态 —— 插件在离线环境下等于没有。
-现在引擎**随包发布**，由 dsh 自己的包内分块路由按需送达。
+> 说明：原先分开准备的 0.6.1（主题）与 0.7.0（离线）没有单独发布，
+> 一起并进本节 —— 0.6.0 就是 v0.5.1 之后的第一次发布。
 
-### Changed
+---
 
-- **引擎随包附带，零网络请求。** `dist/client.mermaid.js`（约 3.4MB：Mermaid 11.17.2
-  原始字节 + 一段注册代码）是 dsh 认得的「包内分块」：插件用模块加载器的分块协议
-  `require.async('./client.mermaid.js')` 取它，dsh 从
-  `/plugins/dsh-mermaid-preview/client.mermaid.js?rev=…` 读盘返回（immutable 缓存）。
-  加载时机不变 —— 仍然「看到候选围栏才去取引擎」，但请求打在本地磁盘上。
-- **引擎查找顺序**（`src/client.js` 的 `loadLocalEngine`）：模块加载器的分块协议 →
-  使用者显式指定的 `window.__DSH_MERMAID_ENGINE_URL__`（自建镜像 / 内网副本）→
-  从 `window.__DSH_BOOT__` 的清单行拼出的分块地址（给还不认识分块的旧加载器）→
-  明确失败并给出提示条。`window.mermaid` 已存在时照旧直接复用。
-- **失败文案换掉了「网络」这个前提**：卡片提示从「Mermaid 加载失败 / 请检查网络」
-  改成「图表引擎未找到 / 随插件附带的引擎没能加载，请重新安装插件」。
-- **删掉了 `<link rel="preconnect">`**：它存在的唯一理由是把 CDN 的 DNS + TLS 握手
-  挪到关键路径之外，现在没有远端，也就没有可预热的域。
-- **免安装的动态载荷（`code.client`）行为有变。** 3.4MB 的引擎塞不进一次对话粘贴，
-  所以载荷本身不含引擎，改走 boot manifest 里的分块地址 —— **前提是同一个 profile
-  里装着本插件**；否则需要使用者自己指定引擎地址（`window.__DSH_MERMAID_ENGINE_URL__`）。
-  文档与失败提示都写明了这一点。
-- 演示页（`npm run demo`）、渲染基准（`bench/`）、素材截图页（`assets/banner.html`）
-  一并改用本地引擎，基准也因此从「网络变量」变成「本地读取」。
+### 少渲染：屏幕外不渲染、SVG 缓存、陈旧保护
 
-### Added
+渲染得更少，而不是渲染得更快——因为 `mermaid.render` 本身就是全部开销。
 
-- **`scripts/vendor-engine.mjs`**：唯一接触上游引擎文件的脚本。它把上游
-  `mermaid.min.js` 原样夹在两个标记之间写进 `dist/client.mermaid.js`，并在头部记录
-  版本号与引擎字节的 sha256。换版本 = 换上游文件后跑一次这个脚本。
-- **`npm run check` 的两条新不变量**：① 引擎分块存在、版本与 `src/client.js` 的
-  `MERMAID_VERSION` 一致、字节哈希与头部记录一致（手改过的引擎冒充不了）；② 出货
-  表面（源码、产物、演示、基准、脚本、文档）里不再有任何 CDN 依赖。
+在 headless Chromium 里用 `bench/`（新增）跑真实插件产物、九图语料量出的事实：
+一次渲染的 95% 是 `mermaid.render` 自己（一组九图 698/738ms），
+`mermaid.initialize` 2–3%（小图可达 15%），DOM 插入 + 首次布局 2%。
+所以「把单次渲染做快」几乎没有空间，能拿的都在「少做一次」和「不要卡住主线程」。
 
-### 未做（已知债）
+#### Added
 
-- 引擎是全量 mermaid（23 种图型都要），3.4MB。mermaid 11 的 ESM 版支持按图型分包，
-  但那要引入打包器并重写主题与渲染的加载方式；收益（包小 1–2MB）不值这次改动。
-- 引擎分块是插件包里的必需文件：`npm pack` 会带上它，但任何裁剪包的安装方式都会让
-  渲染整体失效 —— `npm run check` 会拦住源码仓库里的这种缺失。
+- **渲染结果缓存。** `(配色, 源码)` → SVG 字符串，LRU 40 条 / 4MB，
+  `dispose` 时清空。主题来回切、React 重建消息 DOM、同一条消息里出现两张相同的
+  图，这三种情况以前都会整份重新渲染。实测九图一轮 **753ms → 14ms**。命中时重写
+  SVG 的 id（mermaid 把 `url(#…)`、`<style>` 选择器全按 id 命名空间化，两张卡片
+  共用 id 会让箭头指向别人）。带 `click` 语句的图不缓存。
+- **只渲染看得见的图。** `renderBlock` 先同步判一次「离视口近不近」，不在就先记
+  `wantsPaint`，交给 `IntersectionObserver` 在滚回来时补。实测九张图全部在屏幕外
+  时 `mermaid.render` **9 次 → 0 次**；这就是「打开一段历史很长的对话」的开销来源。
+  排版容器/后台标签页里拿不到盒子（rect 全 0）时按「可见」处理，避免永不渲染。
+- **`bench/`**：可复现的渲染成本基准（Playwright + 真实 `dist/client.js` +
+  九图语料），`node bench/bench.mjs --reps 9 --label baseline` 一条命令出表。
+  README 里写清了每个指标量的是什么、以及这些数字不能证明什么。
 
-## [0.6.1] - 2026-10-20
+#### Changed
+
+- **每个渲染任务之间让出主线程。** mermaid 11 明确把 fastdom 的
+  `requestAnimationFrame` 换成了 `queueMicrotask`（源码注释：
+  "requestAnimationFrame is too slow compared to queueMicrotask"），
+  所以 `await mermaid.render()` 从不把控制权交回浏览器，一条 promise 链能把多张
+  图连成一个长任务。队列仍然严格串行（mermaid 的配置和临时 SVG host 都是模块级
+  状态），但每个任务前插一个宏任务（有 `scheduler.yield()` 就用它，否则
+  `MessageChannel`），单次阻塞上限降到一张图。
+- **`configure` 只在 `(scheme, variant)` 变化时调用。** `mermaid.initialize` 每次
+  都会深拷贝整份配置并重建 base 主题（约 95 次颜色运算，跑两遍）——实测 2–3ms，
+  以前是每张图每次重绘都付一遍（九图 3.2%，小图 15%）。`mermaid.render` 自己每次
+  开头都会 `reset()` 从 site config 重新推导 per-render 配置，所以 site config 只
+  要正确即可。顺手把 `securityLevel` / `suppressErrorRendering` 挪到主题配置**之后**
+  展开：注释一直写着「变体绝不能覆盖这三个标志」，原来的顺序其实允许覆盖。
+- **主题切换只重绘看得见的图。** 屏幕外的只标记待重绘，同一配色重复触发
+  `theme/change` 则一次渲染都不做。`theme/change` 延后一个宏任务再判定，因为事件
+  可能先于主题服务提交新配色，早读会读到旧配色。
+- **首个图表更快出现。** 静默窗口和取引擎以前是串行的（250ms + 一次脚本下载），
+  现在围栏一被识别就发预取，两者并行。引擎改为随包附带后，这一步不再有网络成本；
+  当时为 CDN 加的那条 `preconnect` 已在下面「离线」一节里删掉。
+- **屏幕外的图不再做同步尺寸测量**，等滚进视口再量（`fitReading` 会清掉 memo，
+  期间 SVG 用自身尺寸 + 样式表的 `max-width`）。
+
+#### Fixed
+
+- **「改了但没生效」的两个缺口。** 加缓存和可见性门控的本质是「很多时候故意什么都
+  不做」，每一处跳过都是潜在的陈旧画面，所以逐个排查并补上：
+  - **渲染途中的文本变化会被旧结果覆盖，且永久不修。** `mermaid.render` 期间围栏
+    又变了，旧结果回来后会把「已完成」和当前配色盖到卡片上；而 `renderBlock` 的
+    「已完成 + 文字没变 → 什么都不做」和 `paint` 的配色守卫都会因此跳过那张真正
+    该渲染的新图。现在 `paint` 记住自己渲染的是哪一版文字，回来发现已被取代就直接
+    丢弃结果（缓存写入仍然正确，它的 key 带的是那次渲染的文字）。**只有当单张图的
+    渲染超过 250ms 静默窗口时才会触发**，普通图基本遇不到，但几十个节点的图会。
+    已用「把 render 拉长到 400ms」的可复现用例验证：去掉这道守卫，卡片会停在旧图
+    并一直标着 `done`，直到别的事件碰巧触发一次重绘才恢复；加上后正确收敛。
+  - **主题事件可能早于配色提交。** `theme/change` 若先于主题服务提交新配色到达，
+    `themeScheme()` 读到的是旧值，配色守卫会「正确地」判断无事可做，于是旧主题留在
+    屏幕上直到下次切换。现在读取延后一个宏任务，并且**同时监听 `<body>` 上的
+    `data-ds-dark-theme`**（本插件样式表本来就依赖这个属性）——那个属性是提交动作
+    写出来的，所以事件顺序不再重要；配色守卫让重复触发不花任何渲染。
+- **原地更新的围栏文本以前永远不会重新渲染。** `MutationObserver` 里
+  `if (target.nodeType === 1)` 把 `characterData` 的 target（文本节点，nodeType 3）
+  全丢了，而 React 更新文本子节点正是原地改 `nodeValue`。现在文本节点先解析到
+  父元素、再走原本的「是不是我们自己的 DOM」判断。已验证：原地改字后 2 个节点
+  的图变成 3 个节点；旧产物在同样操作下状态永远停在 `done`。
+
+#### Rejected
+
+- **`content-visibility: auto` + `contain-intrinsic-size`（画布上）。** 实测确实把
+  插入 + 布局段砍掉 70%（九图 15.0ms → 4.3ms），但只占一轮的 1.3%，代价是被跳过
+  的卡片只有内在尺寸：从未滚到过的图在整页截图和打印里是空白，且每张图首次渲染前
+  页面高度是错的。阅读场景里「打印时图消失」不值 1.3%。
+- **`mermaid.render(id, code, container)` 的隔离容器。** 一开始测出 −27%，把节奏
+  对齐（插件是 250ms 静默后才渲染，连续渲染本身便宜 15–20%）之后只剩 −1.7%。
+  临时节点插到哪不影响 mermaid 量什么。
+- **`securityLevel: 'loose'` 跳过 DOMPurify**（省约 2.2ms/次）：渲染的是模型输出的
+  markdown，净化不是可选项。
+- **`htmlLabels: false` 换掉 foreignObject 测量**：实测更慢（48ms vs 42ms）。
+
+#### Measured
+
+同一台机器、同一语料、`--reps 7`，改前 → 改后：
+
+| 指标 | 改前 | 改后 |
+| --- | --- | --- |
+| 九图一轮 `init` | 30.0ms | 0 |
+| 九图一轮 `insert` | 15.0ms | 15.1ms（未变，见 Rejected） |
+| 九图一轮合计 | 815ms | 763ms（−6.4%） |
+| 屏幕外九图的 `mermaid.render` 次数 | 9 | 0 |
+| 同配色再来一轮 | 753ms | 14ms（缓存命中 −98%） |
+| 主题切走再切回 | 整份重渲染 | 0 次渲染 |
+| 视觉回归（DPR 2 整页像素比对） | — | 0 / 9,891,840 像素差异 |
+
+`mermaid.render` 单项在多次运行间有 ±10% 的机器噪声，所以上表只列可归因的差
+（`init` 归零、缓存命中、屏幕外不渲染）；`render` 本身的波动不作为收益。
+
+---
+
+### 主题：语义色分层、深色模式修复、可读性
 
 图表的配色分层：**只在"颜色承载语义"的图型上用实色，装饰性的图型继续用淡彩。**
 
@@ -60,7 +128,7 @@ bench 之外另建了一套 23 图型 × 明暗两套的渲染量测（对比度
 journey / gantt 这些**用颜色编码信息**的图，输在 flowchart / sequence / class / state / ER ——
 它把所有节点刷成同一种薰衣草。所以这批只动前者。
 
-### Fixed
+#### Fixed
 
 - **深色模式下节点底色是近白的（`mix()` 参数顺序反了）。** `mix(a,b,w)` 返回 `a*w + b*(1-w)`，
   而 `nodeFill: mix(card, '#FFFFFF', 0.06)` 是「6% 卡片色 + 94% 白」= `#f1f1f1`，六个设计变体的
@@ -92,117 +160,65 @@ journey / gantt 这些**用颜色编码信息**的图，输在 flowchart / seque
   单元格改为不透明、分组加实色描边。
 - **pie 的白色扇区标签**在绿扇区上 **3.16:1**：扇区改用「走到白字达标」的实色，4.71:1，0 个节点不达标。
 
+---
+
+### 离线：引擎随包附带，插件不再联网
+
+**去掉 CDN：Mermaid 引擎随包附带，插件不再联网。**
+
+之前引擎是运行时从 jsDelivr 取的 `mermaid@11.17.2` UMD。断网、内网、隔离网，或者
+只是 jsDelivr 自己抽风，围栏就永远停在代码块状态 —— 插件在离线环境下等于没有。
+现在引擎**随包发布**，由 dsh 自己的包内分块路由按需送达。
+
+#### Changed
+
+- **引擎随包附带，零网络请求。** `dist/client.mermaid.js`（约 3.4MB：Mermaid 11.17.2
+  原始字节 + 一段注册代码）是 dsh 认得的「包内分块」：插件用模块加载器的分块协议
+  `require.async('./client.mermaid.js')` 取它，dsh 从
+  `/plugins/dsh-mermaid-preview/client.mermaid.js?rev=…` 读盘返回（immutable 缓存）。
+  加载时机不变 —— 仍然「看到候选围栏才去取引擎」，但请求打在本地磁盘上。
+- **引擎查找顺序**（`src/client.js` 的 `loadLocalEngine`）：模块加载器的分块协议 →
+  使用者显式指定的 `window.__DSH_MERMAID_ENGINE_URL__`（自建镜像 / 内网副本）→
+  从 `window.__DSH_BOOT__` 的清单行拼出的分块地址（给还不认识分块的旧加载器）→
+  明确失败并给出提示条。`window.mermaid` 已存在时照旧直接复用。
+- **失败文案换掉了「网络」这个前提**：卡片提示从「Mermaid 加载失败 / 请检查网络」
+  改成「图表引擎未找到 / 随插件附带的引擎没能加载，请重新安装插件」。
+- **删掉了 `<link rel="preconnect">`**：它存在的唯一理由是把 CDN 的 DNS + TLS 握手
+  挪到关键路径之外，现在没有远端，也就没有可预热的域。
+- **免安装的动态载荷（`code.client`）行为有变。** 3.4MB 的引擎塞不进一次对话粘贴，
+  所以载荷本身不含引擎，改走 boot manifest 里的分块地址 —— **前提是同一个 profile
+  里装着本插件**；否则需要使用者自己指定引擎地址（`window.__DSH_MERMAID_ENGINE_URL__`）。
+  文档与失败提示都写明了这一点。
+- 演示页（`npm run demo`）、渲染基准（`bench/`）、素材截图页（`assets/banner.html`）
+  一并改用本地引擎，基准也因此从「网络变量」变成「本地读取」。
+
+#### Added
+
+- **`scripts/vendor-engine.mjs`**：唯一接触上游引擎文件的脚本。它把上游
+  `mermaid.min.js` 原样夹在两个标记之间写进 `dist/client.mermaid.js`，并在头部记录
+  版本号与引擎字节的 sha256。换版本 = 换上游文件后跑一次这个脚本。
+- **`npm run check` 的两条新不变量**：① 引擎分块存在、版本与 `src/client.js` 的
+  `MERMAID_VERSION` 一致、字节哈希与头部记录一致（手改过的引擎冒充不了）；② 出货
+  表面（源码、产物、演示、基准、脚本、文档）里不再有任何 CDN 依赖。
+
+---
+
 ### 未做（已知债）
 
 - treemap 明色下红/紫两组仍偏近（ΔE 5.3）。要动叶子单元格的填充映射，需要先 dump 出真实选择器，
   不想再猜一次。
-- **宽图缩放**：0.6.1 曾加过 `MIN_READABLE_SCALE = 0.72`（宽图不再无限缩小、改为卡片内横滚），
+- **宽图缩放**：这一版曾加过 `MIN_READABLE_SCALE = 0.72`（宽图不再无限缩小、改为卡片内横滚），
   已按用户反馈撤掉 —— 卡片保持"整图按列宽完整显示"，读者要看清细节仍走现有的全窗口查看器。
 - C4 的 rel 标签仍会压到节点上（`c4ShapeMargin: 40`，mermaid 中点放置且标签没有底色）；
   gantt 的里程碑标签仍会压到日期轴 —— 这两条在 Typora（默认主题）里同样存在，是 mermaid 布局，
   不是主题取值问题。
 - `apple` / `quiet` 是手写调色板，没有新的语义实色映射，保持原样（`quiet` 是刻意中性的）。
   其中 apple 的 pie8（白字打在 `#FFCC00` 上 1.51:1）是历史缺陷。
+- 引擎是全量 mermaid（23 种图型都要），3.4MB。mermaid 11 的 ESM 版支持按图型分包，
+  但那要引入打包器并重写主题与渲染的加载方式；收益（包小 1–2MB）不值这次改动。
+- 引擎分块是插件包里的必需文件：`npm pack` 会带上它，但任何裁剪包的安装方式都会让
+  渲染整体失效 —— `npm run check` 会拦住源码仓库里的这种缺失。
 
-## [0.6.0] - 2026-10-20
-
-渲染得更少，而不是渲染得更快——因为 `mermaid.render` 本身就是全部开销。
-
-在 headless Chromium 里用 `bench/`（新增）跑真实插件产物、九图语料量出的事实：
-一次渲染的 95% 是 `mermaid.render` 自己（一组九图 698/738ms），
-`mermaid.initialize` 2–3%（小图可达 15%），DOM 插入 + 首次布局 2%。
-所以「把单次渲染做快」几乎没有空间，能拿的都在「少做一次」和「不要卡住主线程」。
-
-### Added
-
-- **渲染结果缓存。** `(配色, 源码)` → SVG 字符串，LRU 40 条 / 4MB，
-  `dispose` 时清空。主题来回切、React 重建消息 DOM、同一条消息里出现两张相同的
-  图，这三种情况以前都会整份重新渲染。实测九图一轮 **753ms → 14ms**。命中时重写
-  SVG 的 id（mermaid 把 `url(#…)`、`<style>` 选择器全按 id 命名空间化，两张卡片
-  共用 id 会让箭头指向别人）。带 `click` 语句的图不缓存。
-- **只渲染看得见的图。** `renderBlock` 先同步判一次「离视口近不近」，不在就先记
-  `wantsPaint`，交给 `IntersectionObserver` 在滚回来时补。实测九张图全部在屏幕外
-  时 `mermaid.render` **9 次 → 0 次**；这就是「打开一段历史很长的对话」的开销来源。
-  排版容器/后台标签页里拿不到盒子（rect 全 0）时按「可见」处理，避免永不渲染。
-- **`bench/`**：可复现的渲染成本基准（Playwright + 真实 `dist/client.js` +
-  九图语料），`node bench/bench.mjs --reps 9 --label baseline` 一条命令出表。
-  README 里写清了每个指标量的是什么、以及这些数字不能证明什么。
-
-### Changed
-
-- **每个渲染任务之间让出主线程。** mermaid 11 明确把 fastdom 的
-  `requestAnimationFrame` 换成了 `queueMicrotask`（源码注释：
-  "requestAnimationFrame is too slow compared to queueMicrotask"），
-  所以 `await mermaid.render()` 从不把控制权交回浏览器，一条 promise 链能把多张
-  图连成一个长任务。队列仍然严格串行（mermaid 的配置和临时 SVG host 都是模块级
-  状态），但每个任务前插一个宏任务（有 `scheduler.yield()` 就用它，否则
-  `MessageChannel`），单次阻塞上限降到一张图。
-- **`configure` 只在 `(scheme, variant)` 变化时调用。** `mermaid.initialize` 每次
-  都会深拷贝整份配置并重建 base 主题（约 95 次颜色运算，跑两遍）——实测 2–3ms，
-  以前是每张图每次重绘都付一遍（九图 3.2%，小图 15%）。`mermaid.render` 自己每次
-  开头都会 `reset()` 从 site config 重新推导 per-render 配置，所以 site config 只
-  要正确即可。顺手把 `securityLevel` / `suppressErrorRendering` 挪到主题配置**之后**
-  展开：注释一直写着「变体绝不能覆盖这三个标志」，原来的顺序其实允许覆盖。
-- **主题切换只重绘看得见的图。** 屏幕外的只标记待重绘，同一配色重复触发
-  `theme/change` 则一次渲染都不做。`theme/change` 延后一个宏任务再判定，因为事件
-  可能先于主题服务提交新配色，早读会读到旧配色。
-- **首个图表更快出现。** 静默窗口和 CDN 取脚本以前是串行的（250ms + 约 1MB 下载
-  + DNS/TLS），现在围栏一被识别就发预取，两者并行；并加了一条 `preconnect`。
-- **屏幕外的图不再做同步尺寸测量**，等滚进视口再量（`fitReading` 会清掉 memo，
-  期间 SVG 用自身尺寸 + 样式表的 `max-width`）。
-
-### Fixed
-
-- **「改了但没生效」的两个缺口。** 加缓存和可见性门控的本质是「很多时候故意什么都
-  不做」，每一处跳过都是潜在的陈旧画面，所以逐个排查并补上：
-  - **渲染途中的文本变化会被旧结果覆盖，且永久不修。** `mermaid.render` 期间围栏
-    又变了，旧结果回来后会把「已完成」和当前配色盖到卡片上；而 `renderBlock` 的
-    「已完成 + 文字没变 → 什么都不做」和 `paint` 的配色守卫都会因此跳过那张真正
-    该渲染的新图。现在 `paint` 记住自己渲染的是哪一版文字，回来发现已被取代就直接
-    丢弃结果（缓存写入仍然正确，它的 key 带的是那次渲染的文字）。**只有当单张图的
-    渲染超过 250ms 静默窗口时才会触发**，普通图基本遇不到，但几十个节点的图会。
-    已用「把 render 拉长到 400ms」的可复现用例验证：去掉这道守卫，卡片会停在旧图
-    并一直标着 `done`，直到别的事件碰巧触发一次重绘才恢复；加上后正确收敛。
-  - **主题事件可能早于配色提交。** `theme/change` 若先于主题服务提交新配色到达，
-    `themeScheme()` 读到的是旧值，配色守卫会「正确地」判断无事可做，于是旧主题留在
-    屏幕上直到下次切换。现在读取延后一个宏任务，并且**同时监听 `<body>` 上的
-    `data-ds-dark-theme`**（本插件样式表本来就依赖这个属性）——那个属性是提交动作
-    写出来的，所以事件顺序不再重要；配色守卫让重复触发不花任何渲染。
-- **原地更新的围栏文本以前永远不会重新渲染。** `MutationObserver` 里
-  `if (target.nodeType === 1)` 把 `characterData` 的 target（文本节点，nodeType 3）
-  全丢了，而 React 更新文本子节点正是原地改 `nodeValue`。现在文本节点先解析到
-  父元素、再走原本的「是不是我们自己的 DOM」判断。已验证：原地改字后 2 个节点
-  的图变成 3 个节点；旧产物在同样操作下状态永远停在 `done`。
-
-### Rejected
-
-- **`content-visibility: auto` + `contain-intrinsic-size`（画布上）。** 实测确实把
-  插入 + 布局段砍掉 70%（九图 15.0ms → 4.3ms），但只占一轮的 1.3%，代价是被跳过
-  的卡片只有内在尺寸：从未滚到过的图在整页截图和打印里是空白，且每张图首次渲染前
-  页面高度是错的。阅读场景里「打印时图消失」不值 1.3%。
-- **`mermaid.render(id, code, container)` 的隔离容器。** 一开始测出 −27%，把节奏
-  对齐（插件是 250ms 静默后才渲染，连续渲染本身便宜 15–20%）之后只剩 −1.7%。
-  临时节点插到哪不影响 mermaid 量什么。
-- **`securityLevel: 'loose'` 跳过 DOMPurify**（省约 2.2ms/次）：渲染的是模型输出的
-  markdown，净化不是可选项。
-- **`htmlLabels: false` 换掉 foreignObject 测量**：实测更慢（48ms vs 42ms）。
-
-### Measured
-
-同一台机器、同一语料、`--reps 7`，改前 → 改后：
-
-| 指标 | 改前 | 改后 |
-| --- | --- | --- |
-| 九图一轮 `init` | 30.0ms | 0 |
-| 九图一轮 `insert` | 15.0ms | 15.1ms（未变，见 Rejected） |
-| 九图一轮合计 | 815ms | 763ms（−6.4%） |
-| 屏幕外九图的 `mermaid.render` 次数 | 9 | 0 |
-| 同配色再来一轮 | 753ms | 14ms（缓存命中 −98%） |
-| 主题切走再切回 | 整份重渲染 | 0 次渲染 |
-| 视觉回归（DPR 2 整页像素比对） | — | 0 / 9,891,840 像素差异 |
-
-`mermaid.render` 单项在多次运行间有 ±10% 的机器噪声，所以上表只列可归因的差
-（`init` 归零、缓存命中、屏幕外不渲染）；`render` 本身的波动不作为收益。
 
 ## [0.5.1] - 2026-10-17
 
