@@ -5,46 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.1] - 2026-10-20
-
-**补齐商店兼容窗口的三条精确记录 —— 让插件重新出现在 DSH STORE 的可安装列表里。**
-
-DSH STORE 以「官方最新三个 DSH 发行版」为兼容窗口，窗口里只要有一个版本在
-manifest 里没有**精确**记录（范围声明不算数），条目就会被判为「兼容性暂时下架」。
-官方这三个版本已经走到 `0.2.1-alpha.5` / `0.2.1-rc.1` / `0.2.1-rc.2`，而本插件的
-`dshReleases` 只写到 `0.2.1-alpha.4` —— 商城条目因此一直挂着
-`blocked`（`AI-Scarlett/DSH-Store#910`）。这一版补上这三条，并附上可复现的验证脚本。
-
-### Added
-
-- **`scripts/verify-compat.mjs`**（`npm run verify:compat -- <版本> …`）：对指定的每个
-  DSH 版本，装上**该版本自己**发布的客户端包，按 [compatibility.md](./docs/compatibility.md)
-  的五项标准逐条判定 —— 它自己的 `dsh-client-modules` scanner 是否接受本包、
-  `dsh.client` 契约、`/plugins/<id>/client.js` 路由与 `__DSH_BOOT__` 注入、
-  CodeBlock 的 DOM 契约（`.md-code-block` / banner / content / `<pre>`）、
-  locale 的 `register()`/`bind()` 与 inject 目标行。窗口会滚动，这个脚本让「补一条
-  声明」从重做一遍调研变成一条命令。
-
-### Changed
-
-- **`dsh.compatibility.dshReleases` 新增 `0.2.1-alpha.5`、`0.2.1-rc.1`、`0.2.1-rc.2`
-  三条 `compatible`。** 三条都是跑上面那个脚本得到的：三个版本各自的 scanner 都接受
-  本包（`packageName = dsh-mermaid-preview`、`clientPath` 存在、`immediately: true`、
-  `external: []`），DOM / locale / inject 契约也都在。
-- 文档补上商店窗口的说明：窗口滚动 → 每次出新的 DSH 发行版都要重跑一次检查并补声明。
-
-### 未做（已知债）
-
-- 兼容窗口仍然是**滚动**的：DSH 再出三个新版本、而本插件没有跟进声明，商城条目会再次
-  被判「暂时下架」。这件事只能靠定期重跑 `npm run verify:compat` 兜住，没有自动化。
-
 ## [0.6.0] - 2026-10-20
 
-一版三件事：**少渲染**（屏幕外不渲染、SVG 缓存、陈旧保护）、
+一版四件事：**少渲染**（屏幕外不渲染、SVG 缓存、陈旧保护）、
 **主题**（语义色分层、深色模式修复、可读性）、
-**离线**（Mermaid 引擎随包附带，插件不再联网）。
+**离线**（Mermaid 引擎随包附带，插件不再联网）、
+**兼容**（补齐 DSH STORE 兼容窗口的三条精确记录）。
 
-> 说明：原先分开准备的 0.6.1（主题）与 0.7.0（离线）没有单独发布，
+> 说明：原先分开准备的几轮改动（少渲染 / 主题 / 离线 / 商城兼容记录）都没有单独发布，
 > 一起并进本节 —— 0.6.0 就是 v0.5.1 之后的第一次发布。
 
 ---
@@ -236,6 +204,38 @@ journey / gantt 这些**用颜色编码信息**的图，输在 flowchart / seque
 
 ---
 
+---
+
+### 兼容：补齐商店窗口的三条精确记录
+
+**补齐商店兼容窗口的三条精确记录 —— 让插件重新出现在 DSH STORE 的可安装列表里。**
+
+DSH STORE 以「官方最新三个 DSH 发行版」为兼容窗口，窗口里只要有一个版本在
+manifest 里没有**精确**记录（范围声明不算数），条目就会被判为「兼容性暂时下架」。
+官方这三个版本已经走到 `0.2.1-alpha.5` / `0.2.1-rc.1` / `0.2.1-rc.2`，而本插件的
+`dshReleases` 只写到 `0.2.1-alpha.4` —— 商城条目因此一直挂着
+`blocked`（`AI-Scarlett/DSH-Store#910`）。这一版补上这三条，并附上可复现的验证脚本。
+
+#### Added
+
+- **`scripts/verify-compat.mjs`**（`npm run verify:compat -- <版本> …`）：对指定的每个
+  DSH 版本，装上**该版本自己**发布的客户端包，按 [compatibility.md](./docs/compatibility.md)
+  的五项标准逐条判定 —— 它自己的 `dsh-client-modules` scanner 是否接受本包、
+  `dsh.client` 契约、`/plugins/<id>/client.js` 路由与 `__DSH_BOOT__` 注入、
+  CodeBlock 的 DOM 契约（`.md-code-block` / banner / content / `<pre>`）、
+  locale 的 `register()`/`bind()` 与 inject 目标行。窗口会滚动，这个脚本让「补一条
+  声明」从重做一遍调研变成一条命令。
+
+#### Changed
+
+- **`dsh.compatibility.dshReleases` 新增 `0.2.1-alpha.5`、`0.2.1-rc.1`、`0.2.1-rc.2`
+  三条 `compatible`。** 三条都是跑上面那个脚本得到的：三个版本各自的 scanner 都接受
+  本包（`packageName = dsh-mermaid-preview`、`clientPath` 存在、`immediately: true`、
+  `external: []`），DOM / locale / inject 契约也都在。
+- 文档补上商店窗口的说明：窗口滚动 → 每次出新的 DSH 发行版都要重跑一次检查并补声明。
+
+---
+
 ### 未做（已知债）
 
 - treemap 明色下红/紫两组仍偏近（ΔE 5.3）。要动叶子单元格的填充映射，需要先 dump 出真实选择器，
@@ -251,6 +251,8 @@ journey / gantt 这些**用颜色编码信息**的图，输在 flowchart / seque
   但那要引入打包器并重写主题与渲染的加载方式；收益（包小 1–2MB）不值这次改动。
 - 引擎分块是插件包里的必需文件：`npm pack` 会带上它，但任何裁剪包的安装方式都会让
   渲染整体失效 —— `npm run check` 会拦住源码仓库里的这种缺失。
+- 兼容窗口仍然是**滚动**的：DSH 再出三个新版本、而本插件没有跟进声明，商城条目会再次
+  被判「暂时下架」。这件事只能靠定期重跑 `npm run verify:compat` 兜住，没有自动化。
 
 
 ## [0.5.1] - 2026-10-17
