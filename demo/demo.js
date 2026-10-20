@@ -1,11 +1,12 @@
 /**
  * dsh-mermaid-preview — standalone demo logic (zero dependencies, no build).
  *
- * The rendering pipeline is the same one the plugin uses: Mermaid 11 (UMD from
- * jsDelivr), `securityLevel: 'strict'`, a diagram/source toggle, and a render
- * failure that stays calm and recoverable. The demo adds the product shell:
- * presets, an appearance control (follow system / light / dark), quiet render
- * states, and a full-window diagram viewer.
+ * The rendering pipeline is the same one the plugin uses: Mermaid 11 (the
+ * engine vendored in `dist/client.mermaid.js`, served locally), `securityLevel:
+ * 'strict'`, a diagram/source toggle, and a render failure that stays calm and
+ * recoverable. The demo adds the product shell: presets, an appearance control
+ * (follow system / light / dark), quiet render states, and a full-window
+ * diagram viewer.
  *
  * Mermaid is configured in exactly one place — the marked block below — with
  * the same DSH-native theme the plugin uses, imported straight from
@@ -15,7 +16,8 @@
 import { configForVariant, THEME_VARIANT, THEME_VARIANTS } from '../src/theme.js'
 
 const MERMAID_VERSION = '11.17.2'
-const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js'
+/** The vendored engine, served by the demo server from the package. */
+const MERMAID_ENGINE = '/dist/client.mermaid.js'
 const THEME_STORAGE_KEY = 'dsh-mermaid-demo-theme'
 const DEBOUNCE_MS = 250
 
@@ -358,20 +360,20 @@ const loadMermaid = () => {
   if (mermaidPromise !== null) return mermaidPromise
   mermaidPromise = new Promise((resolve, reject) => {
     const script = document.createElement('script')
-    script.src = MERMAID_CDN
+    script.src = MERMAID_ENGINE
     script.async = true
     script.onload = () => {
       if (window.mermaid !== undefined) {
         resolve(window.mermaid)
       } else {
         mermaidPromise = null
-        reject(loadFailure(`脚本已加载，但 window.mermaid 缺失：${MERMAID_CDN}`))
+        reject(loadFailure(`脚本已加载，但 window.mermaid 缺失：${MERMAID_ENGINE}`))
       }
     }
     script.onerror = () => {
       script.remove()
       mermaidPromise = null
-      reject(loadFailure(`无法从 jsDelivr 加载 Mermaid：${MERMAID_CDN}`))
+      reject(loadFailure(`无法加载本地 Mermaid 引擎：${MERMAID_ENGINE}`))
     }
     document.head.append(script)
   })

@@ -54,8 +54,8 @@
 import { CORPUS, WARMUP } from './corpus.mjs'
 import { configForVariant } from '/src/theme.js'
 
-/** Same pinned release the plugin loads; see MERMAID_CDN in src/client.js. */
-const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js'
+/** The engine the plugin ships with; see MERMAID_VERSION in src/client.js. */
+const MERMAID_ENGINE = '/dist/client.mermaid.js'
 
 const params = new URLSearchParams(location.search)
 const CFG = {
@@ -290,8 +290,8 @@ const isCanvas = (element) => element?.classList?.contains('dsh-mermaid-canvas')
 
 /**
  * Install every probe around an already-loaded mermaid. The plugin's
- * `loadMermaid()` resolves immediately from `window.mermaid`, so the CDN
- * fetch sits outside the measured window: it is a network variable, not a
+ * `loadMermaid()` resolves immediately from `window.mermaid`, so the engine
+ * load sits outside the measured window: it is a fetch variable, not a
  * render cost, and the plugin's own lazy-load path is still exercised by the
  * warmup pass.
  */
@@ -702,12 +702,12 @@ const run = async () => {
   status('loading mermaid…')
   const mermaid = await new Promise((done, fail) => {
     const script = document.createElement('script')
-    script.src = MERMAID_CDN
+    script.src = MERMAID_ENGINE
     script.async = true
     script.onload = () => (window.mermaid === undefined
-      ? fail(new Error('window.mermaid is missing after the CDN script'))
+      ? fail(new Error('window.mermaid is missing after the engine script'))
       : done(window.mermaid))
-    script.onerror = () => fail(new Error(`failed to load ${MERMAID_CDN}`))
+    script.onerror = () => fail(new Error(`failed to load ${MERMAID_ENGINE}`))
     document.head.append(script)
   })
   mermaid.__rawInitialize = mermaid.initialize.bind(mermaid)
@@ -883,7 +883,7 @@ const run = async () => {
     }
   })()
   return {
-    config: { ...CFG, mermaid: MERMAID_CDN },
+    config: { ...CFG, mermaid: MERMAID_ENGINE },
     geometry,
     warmup,
     parked,

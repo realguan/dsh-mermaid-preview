@@ -78,8 +78,22 @@ const NS = PLUGIN_ID
 /** Fence language this plugin takes over. */
 const LANGUAGE = 'mermaid'
 
-/** Pinned Mermaid release (UMD). Change this line to use a mirror. */
-const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js'
+/**
+ * The vendored Mermaid engine.
+ *
+ * The engine is *not* fetched at runtime: it ships inside the package, as
+ * `dist/client.mermaid.js`, so a diagram renders on a machine that has no
+ * route to the internet. dsh serves that file through its package-local chunk
+ * route (`/plugins/dsh-mermaid-preview/client.mermaid.js?rev=…`), and the
+ * page's module loader reaches it with `require.async`.
+ */
+const ENGINE_CHUNK = './client.mermaid.js'
+
+/** The chunk's file name inside the package. */
+const ENGINE_FILE = 'client.mermaid.js'
+
+/** The Mermaid release vendored into `dist/client.mermaid.js`. */
+const MERMAID_VERSION = '11.17.2'
 
 /** Quiet period before a fence is considered settled and worth rendering. */
 const SETTLE_MS = 250
@@ -306,8 +320,8 @@ const DICT = {
     themeNeutral: 'dsh neutral',
     layoutGrowAction: 'Full expand: the card follows the diagram height',
     layoutScrollAction: 'Scroll container: tall diagrams scroll inside the card',
-    loadFailed: 'Mermaid failed to load',
-    loadFailedNote: 'The diagram engine could not be fetched. Check the network and try again.',
+    loadFailed: 'Mermaid engine not found',
+    loadFailedNote: 'The bundled diagram engine could not be loaded. Reinstall the plugin — the engine ships with it — and try again.',
     renderFailed: 'Mermaid syntax error',
     renderFailedNote: 'The source is kept below — fix it and the diagram renders again.',
     details: 'Details',
@@ -328,8 +342,8 @@ const DICT = {
     themeNeutral: 'dsh 中性',
     layoutGrowAction: '完整展开：卡片随图变高',
     layoutScrollAction: '滚动容器：高图在卡片内滚动',
-    loadFailed: 'Mermaid 加载失败',
-    loadFailedNote: '图表引擎没能加载，请检查网络后重试。',
+    loadFailed: '图表引擎未找到',
+    loadFailedNote: '随插件附带的图表引擎没能加载，请重新安装插件后重试。',
     renderFailed: '图表语法有误',
     renderFailedNote: '已保留源码，修正后会自动重新渲染。',
     details: '查看详情',
@@ -1032,42 +1046,104 @@ export default {
     /** A load failure, tagged so the note can use the load-failed copy. */
     const loadFailure = (message) => Object.assign(new Error(message), { dshMermaidLoad: true })
 
+    /**
+     * The engine's URL, derived from the page's boot manifest.
+     *
+     * dsh publishes every installed client plugin as a row in
+     * `window.__DSH_BOOT__`, and the row's URL carries the package revision
+     * the chunk route expects. This is the fallback for a page whose module
+     * loader predates the chunk protocol.
+     * @returns {string|null} an absolute URL, or null when the row is absent.
+     */
+    const engineChunkUrl = () => {
+      const boot = globalThis.__DSH_BOOT__
+      const entries = Array.isArray(boot?.entries) ? boot.entries : []
+      const row = entries.find((entry) => entry?.id === PLUGIN_ID)
+      if (row === undefined || typeof row.url !== 'string') return null
+      const rev = /[?&]rev=([^&#]*)/.exec(row.url)?.[1]
+      if (rev === undefined || rev === '') return null
+      const path = `plugins/${PLUGIN_ID}/${ENGINE_FILE}?rev=${encodeURIComponent(rev)}`
+      return new URL(path, document.baseURI).href
+    }
+
+    /**
+     * Load a Mermaid build from a URL, as a plain script.
+     *
+     * The build assigns `globalThis.mermaid`; that is the whole contract.
+     * @param {string} url - where to fetch the engine.
+     * @returns {Promise<object>} the Mermaid API.
+     */
+    const loadEngineFrom = (url) => new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = url
+      script.async = true
+      script.onload = () => {
+        state.scripts.delete(script)
+        if (window.mermaid !== undefined) resolve(window.mermaid)
+        else reject(loadFailure(`window.mermaid is missing after loading ${url}`))
+      }
+      script.onerror = () => {
+        state.scripts.delete(script)
+        script.remove()
+        reject(loadFailure(url))
+      }
+      state.scripts.add(script)
+      ;(document.head ?? document.documentElement).append(script)
+    })
+
+    /**
+     * The vendored engine, loaded from the package.
+     *
+     * Three sources, in order:
+     *   1. the module loader's chunk protocol (`require.async`) — the supported
+     *      path for an installed plugin;
+     *   2. a URL the reader set (`window.__DSH_MERMAID_ENGINE_URL__`), e.g. a
+     *      self-hosted mirror;
+     *   3. the chunk route addressed straight from the boot manifest, for a
+     *      page whose loader predates the chunk protocol.
+     *
+     * @returns {Promise<object>} the Mermaid API.
+     */
+    const loadLocalEngine = async () => {
+      if (typeof require === 'function' && typeof require.async === 'function') {
+        try {
+          const chunk = await require.async(ENGINE_CHUNK)
+          if (chunk?.mermaid !== undefined) return chunk.mermaid
+        } catch {
+          // Fall through to the script-tag paths below.
+        }
+      }
+      const override = globalThis.__DSH_MERMAID_ENGINE_URL__
+      if (typeof override === 'string' && override !== '') {
+        return await loadEngineFrom(override)
+      }
+      const url = engineChunkUrl()
+      if (url !== null) return await loadEngineFrom(url)
+      throw loadFailure(`the Mermaid ${MERMAID_VERSION} engine (${ENGINE_FILE}) is not reachable from this page`)
+    }
+
     const loadMermaid = () => {
       if (window.mermaid !== undefined) return Promise.resolve(window.mermaid)
       if (state.mermaid !== null) return state.mermaid
-      state.mermaid = new Promise((resolve, reject) => {
-        const script = document.createElement('script')
-        script.src = MERMAID_CDN
-        script.async = true
-        script.onload = () => {
-          state.scripts.delete(script)
-          if (window.mermaid !== undefined) resolve(window.mermaid)
-          else reject(loadFailure(`window.mermaid is missing after loading ${MERMAID_CDN}`))
-        }
-        script.onerror = () => {
-          state.scripts.delete(script)
-          script.remove()
-          // Let a later fence retry instead of pinning the page to one failed
-          // request.
-          state.mermaid = null
-          reject(loadFailure(MERMAID_CDN))
-        }
-        state.scripts.add(script)
-        ;(document.head ?? document.documentElement).append(script)
+      state.mermaid = loadLocalEngine().catch((error) => {
+        // Let a later fence retry instead of pinning the page to one failed
+        // load.
+        state.mermaid = null
+        throw error
       })
       return state.mermaid
     }
 
     /**
-     * Start the engine download as soon as a fence looks like a diagram.
+     * Start the engine load as soon as a fence looks like a diagram.
      *
-     * The settle window and the CDN fetch used to run one after the other, so
-     * the first diagram in a conversation paid both: 250ms of quiet plus a ~1MB
-     * script plus DNS and TLS. Firing the fetch when the fence is *detected*
-     * overlaps them and takes the settle window off the critical path. The weak
-     * set bounds it to one attempt per block, so a streaming fence cannot queue
-     * a request per token, and the whole function is a no-op once the engine is
-     * on its way.
+     * The settle window and the engine fetch used to run one after the other,
+     * so the first diagram in a conversation paid both: 250ms of quiet plus
+     * the script. Firing the load when the fence is *detected* overlaps them
+     * and takes the settle window off the critical path. The weak set bounds
+     * it to one attempt per block, so a streaming fence cannot queue a request
+     * per token, and the whole function is a no-op once the engine is on its
+     * way.
      */
     const prefetched = new WeakSet()
     const prefetchEngine = (block) => {
@@ -2466,26 +2542,6 @@ export default {
       }
     }
 
-    // ---- theme ---------------------------------------------------------
-    // One preconnect, not a preload: it downloads nothing, and it takes the DNS
-    // lookup and TLS handshake off the critical path of the first diagram
-    // instead of leaving them to run after the settle window.
-    ctx.effect(() => {
-      let origin
-      try {
-        origin = new URL(MERMAID_CDN).origin
-      } catch {
-        return () => {}
-      }
-      const link = document.createElement('link')
-      link.rel = 'preconnect'
-      link.href = origin
-      link.crossOrigin = ''
-      link.dataset.dshMermaidPreconnect = '1'
-      ;(document.head ?? document.documentElement).append(link)
-      return () => link.remove()
-    }, `${PLUGIN_ID}: preconnect`)
-
     // ---- lifecycle ------------------------------------------------------
     const observer = new MutationObserver((mutations) => {
       // Streaming replaces message DOM wholesale; a viewer left showing a
@@ -2617,5 +2673,5 @@ export default {
 // Exposed for `npm run check` only: the pure detection logic is the part that
 // cannot be exercised in the browser here. scripts/build.mjs strips everything
 // between these markers from every built artifact.
-export const __test = { MERMAID_HEAD, MERMAID_CDN, opensDiagram, diagramKind }
+export const __test = { MERMAID_HEAD, MERMAID_VERSION, ENGINE_CHUNK, opensDiagram, diagramKind }
 /* dsh:test-only:end */

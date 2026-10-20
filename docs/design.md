@@ -213,7 +213,7 @@ mermaid 测量 HTML label 时用的是挂在 `<body>` 下的临时 SVG（继承�
   查看详情 ⌄     ← 展开后是解析器原文（等宽 11px，限高滚动）
 ```
 
-- 底色：warn 7%（语法错误）/ error 7%（CDN 加载失败），圆角 12，12–13px 文字。
+- 底色：warn 7%（语法错误）/ error 7%（引擎缺失），圆角 12，12–13px 文字。
 - 标题用 label-primary，说明用 tertiary，图标用对应 state 色。
 - `details/summary` 原生展开，键盘可用；不再把整段 `Parse error …` 直接铺在卡片里。
 - 流式中途的失败仍然静默重试（400/900/1800ms），只有文本稳定后仍失败才显示提示。

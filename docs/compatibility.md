@@ -70,8 +70,8 @@
   uninstall / rollback 并确认渲染结果」。
 - **不含视觉验收。** 图表在浏览器里的观感（出图、主题重绘、切换、失败兜底）需要在
   装有插件的 dsh Web 页面上人工确认，见 [install.md](./install.md) § 验证。
-- **不含 mermaid 版本声明。** mermaid 从 CDN 加载，与 DSH 版本无关；升级大版本前请
-  按 [architecture.md](./architecture.md) §7 自查。
+- **不含 mermaid 版本声明。** mermaid 引擎（当前 **11.17.2**）随插件包一起发布，
+  与 DSH 版本无关；升级大版本前请按 [architecture.md](./architecture.md) §8 自查。
 
 ## 复现验证
 

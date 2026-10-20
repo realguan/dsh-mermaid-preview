@@ -5,6 +5,52 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-20
+
+**去掉 CDN：Mermaid 引擎随包附带，插件不再联网。**
+
+之前引擎是运行时从 jsDelivr 取的 `mermaid@11.17.2` UMD。断网、内网、隔离网，或者
+只是 jsDelivr 自己抽风，围栏就永远停在代码块状态 —— 插件在离线环境下等于没有。
+现在引擎**随包发布**，由 dsh 自己的包内分块路由按需送达。
+
+### Changed
+
+- **引擎随包附带，零网络请求。** `dist/client.mermaid.js`（约 3.4MB：Mermaid 11.17.2
+  原始字节 + 一段注册代码）是 dsh 认得的「包内分块」：插件用模块加载器的分块协议
+  `require.async('./client.mermaid.js')` 取它，dsh 从
+  `/plugins/dsh-mermaid-preview/client.mermaid.js?rev=…` 读盘返回（immutable 缓存）。
+  加载时机不变 —— 仍然「看到候选围栏才去取引擎」，但请求打在本地磁盘上。
+- **引擎查找顺序**（`src/client.js` 的 `loadLocalEngine`）：模块加载器的分块协议 →
+  使用者显式指定的 `window.__DSH_MERMAID_ENGINE_URL__`（自建镜像 / 内网副本）→
+  从 `window.__DSH_BOOT__` 的清单行拼出的分块地址（给还不认识分块的旧加载器）→
+  明确失败并给出提示条。`window.mermaid` 已存在时照旧直接复用。
+- **失败文案换掉了「网络」这个前提**：卡片提示从「Mermaid 加载失败 / 请检查网络」
+  改成「图表引擎未找到 / 随插件附带的引擎没能加载，请重新安装插件」。
+- **删掉了 `<link rel="preconnect">`**：它存在的唯一理由是把 CDN 的 DNS + TLS 握手
+  挪到关键路径之外，现在没有远端，也就没有可预热的域。
+- **免安装的动态载荷（`code.client`）行为有变。** 3.4MB 的引擎塞不进一次对话粘贴，
+  所以载荷本身不含引擎，改走 boot manifest 里的分块地址 —— **前提是同一个 profile
+  里装着本插件**；否则需要使用者自己指定引擎地址（`window.__DSH_MERMAID_ENGINE_URL__`）。
+  文档与失败提示都写明了这一点。
+- 演示页（`npm run demo`）、渲染基准（`bench/`）、素材截图页（`assets/banner.html`）
+  一并改用本地引擎，基准也因此从「网络变量」变成「本地读取」。
+
+### Added
+
+- **`scripts/vendor-engine.mjs`**：唯一接触上游引擎文件的脚本。它把上游
+  `mermaid.min.js` 原样夹在两个标记之间写进 `dist/client.mermaid.js`，并在头部记录
+  版本号与引擎字节的 sha256。换版本 = 换上游文件后跑一次这个脚本。
+- **`npm run check` 的两条新不变量**：① 引擎分块存在、版本与 `src/client.js` 的
+  `MERMAID_VERSION` 一致、字节哈希与头部记录一致（手改过的引擎冒充不了）；② 出货
+  表面（源码、产物、演示、基准、脚本、文档）里不再有任何 CDN 依赖。
+
+### 未做（已知债）
+
+- 引擎是全量 mermaid（23 种图型都要），3.4MB。mermaid 11 的 ESM 版支持按图型分包，
+  但那要引入打包器并重写主题与渲染的加载方式；收益（包小 1–2MB）不值这次改动。
+- 引擎分块是插件包里的必需文件：`npm pack` 会带上它，但任何裁剪包的安装方式都会让
+  渲染整体失效 —— `npm run check` 会拦住源码仓库里的这种缺失。
+
 ## [0.6.1] - 2026-10-20
 
 图表的配色分层：**只在"颜色承载语义"的图型上用实色，装饰性的图型继续用淡彩。**

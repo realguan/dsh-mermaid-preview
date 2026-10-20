@@ -109,9 +109,10 @@ Full checklist: [docs/install.md](./docs/install.md).
   you reach the end); click the diagram or the header's zoom control for the
   full-window viewer: blurred mask, floating toolbar, wheel zoom, drag to pan,
   fit / 1:1, `Esc` to close (see [architecture.md](./docs/architecture.md) §7)
-- 🛟 **Fails soft, without shouting** — a CDN or syntax failure keeps the source
-  and shows a calm note (a human sentence plus expandable parser detail) instead
-  of a wall of red; editing the fence retries automatically
+- 🛟 **Fails soft, without shouting** — a missing engine or a syntax failure
+  keeps the source and shows a calm note (a human sentence plus expandable
+  parser detail) instead of a wall of red; editing the fence retries
+  automatically
 - 🧹 **Clean disposal** — styles, observer, timers, script tag, and injected DOM
   all belong to the plugin fiber
 - 🧪 **Self-checking** — `npm run check` validates syntax, manifest, artifact
@@ -144,9 +145,14 @@ header plus a `[data-code-block-content]` body. For a language shiki does not kn
 
 The plugin uses a `MutationObserver` to find blocks whose body's first element is
 that `<pre>`, checks whether the fence's first statement opens a Mermaid diagram,
-then lazily loads Mermaid 11 (jsDelivr CDN) and injects the SVG into a
+then lazily loads the Mermaid 11 engine and injects the SVG into a
 `.dsh-mermaid` holder appended **after** React's children — hiding the original
 body with an attribute instead of replacing any React-owned node.
+
+The engine **ships with the package** (`dist/client.mermaid.js`, ~3.4 MB) and is
+served on demand by dsh's own package-local chunk route: the plugin makes **no
+network request**, so diagrams render on an offline, air-gapped, or
+intranet-only machine.
 
 Full rationale, DOM contract, disposal strategy, and known limits:
 [docs/architecture.md](./docs/architecture.md). Visual rules, design tokens, and
@@ -179,8 +185,8 @@ docs/compatibility.md           Per-release DSH compatibility claims and their e
 | Platform | dsh Web (Client half) + empty Host half |
 | Plugin form | dsh bundle client plugin (`dsh.bundle.patch` + `dsh.client`) |
 | DSH compatibility | Declared per release in `dsh.compatibility.dshReleases`; evidence in [docs/compatibility.md](./docs/compatibility.md) |
-| Mermaid | 11.17.2 (UMD, jsDelivr CDN; swap the constant for a mirror) |
-| Dependencies | None at runtime; scripts use Node built-ins only |
+| Mermaid | 11.17.2 (engine shipped with the package, `dist/client.mermaid.js`, no network) |
+| Dependencies | None at runtime (the engine ships with the package); scripts use Node built-ins only |
 | Safety | `securityLevel: 'strict'`, `suppressErrorRendering`, no telemetry |
 | License | MIT |
 
@@ -191,8 +197,10 @@ docs/compatibility.md           Per-release DSH compatibility claims and their e
   `mermaid-preview` row.
 - **Console shows `client-modules:` errors**: the message names the package and
   the broken declaration (missing `./client` export, module-graph cycle, …).
-- **CDN load failure**: offline, or jsDelivr unreachable. Change `MERMAID_CDN` at
-  the top of `src/client.js` and run `npm run build`.
+- **"Mermaid engine not found"**: the packaged engine file
+  `dist/client.mermaid.js` is missing or was not installed. The engine ships
+  with the plugin, so reinstalling it is the fix (`npm run check` verifies the
+  file).
 - **Nothing renders while streaming**: by design; a fence must be quiet for 250 ms.
 - **A non-Mermaid fence became a diagram**: detection is content-based, so a fence
   whose first line happens to be `graph TD` is claimed. Change that first line.
@@ -224,9 +232,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md). After editing `src/client.js`, run
 
 ## Credits
 
-- [mermaid](https://github.com/mermaid-js/mermaid) — the diagram engine
+- [mermaid](https://github.com/mermaid-js/mermaid) — the diagram engine (MIT, shipped with the package)
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the platform
-- [jsDelivr](https://www.jsdelivr.com/) — CDN delivery
 
 ## License
 

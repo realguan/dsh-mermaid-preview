@@ -5,10 +5,11 @@
  * Usage: node scripts/serve-demo.mjs [port]
  * Default port: 8090 → http://localhost:8090 (serves demo/index.html)
  *
- * The demo page loads mermaid from the jsDelivr CDN, so an internet
- * connection is required (same as the dsh plugin itself). It imports the
- * plugin's diagram theme from src/theme.js, so the server root is the package
- * root; only demo/ and that one module are reachable over HTTP.
+ * The demo page loads the Mermaid engine the plugin ships with
+ * (`dist/client.mermaid.js`), so the demo works offline, exactly like the
+ * plugin does. It imports the plugin's diagram theme from src/theme.js, so the
+ * server root is the package root; only demo/, that one module, and the
+ * engine chunk are reachable over HTTP.
  */
 
 import { createServer } from 'node:http'
@@ -19,6 +20,7 @@ import { dirname, join, normalize, extname, sep } from 'node:path'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const demoRoot = join(root, 'demo')
 const themeFile = join(root, 'src', 'theme.js')
+const engineFile = join(root, 'dist', 'client.mermaid.js')
 const port = Number(process.argv[2] ?? 8090)
 
 const TYPES = {
@@ -47,7 +49,7 @@ const server = createServer(async (req, res) => {
     if (path.startsWith('/')) path = path.slice(1)
     if (path.includes('..')) throw new Error('forbidden')
     const file = join(root, path)
-    const allowed = file === themeFile || file.startsWith(demoRoot + sep)
+    const allowed = file === themeFile || file === engineFile || file.startsWith(demoRoot + sep)
     if (!allowed) throw new Error('forbidden')
     const body = await readFile(file)
     res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream' })

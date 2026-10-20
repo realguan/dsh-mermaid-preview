@@ -137,10 +137,18 @@ dsh plugin --profile web add github:realguan/dsh-mermaid-preview
 3. 确认页面 boot 清单里有这一行：控制台执行
    `window.__DSH_BOOT__.entries.map(e => e.id)`。
 
-**不渲染且报 CDN 加载失败**
+**不渲染且报「图表引擎未找到」**
 
-离线或 jsDelivr 不可达。改 `src/client.js` 顶部的 `MERMAID_CDN`（可换成内网镜像），
-`npm run build` 后重新安装。
+包里的引擎文件 `dist/client.mermaid.js` 没装上（或装的是旧版本包）。引擎随包一起
+安装，重新安装插件即可；本地可用 `npm run check` 验证该文件存在且完整。
+当前随包附带的是 Mermaid **11.17.2**（`src/client.js` 的 `MERMAID_VERSION`）。
+
+**免安装的动态载荷（`code.client`）不渲染**
+
+动态载荷本身不含引擎（3.4MB 的引擎塞不进一次对话粘贴），它会去读 boot manifest
+里的分块地址——所以**同一个 profile 里必须装着本插件**。如果不想装，可以自己指定
+一个引擎地址：页面里设置 `window.__DSH_MERMAID_ENGINE_URL__` 指向一个可访问的
+`mermaid.min.js`。
 
 **流式输出过程中不渲染**
 

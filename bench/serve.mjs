@@ -6,7 +6,8 @@
  *   /            -> bench/page.html         (the page skeleton)
  *   /bench/*     -> bench/*                 (page.js, corpus.mjs)
  *   /src/theme.js-> src/theme.js            (the plugin's theme, as native ESM)
- *   /dist/*.js   -> dist/*                  (the built plugin bundle)
+ *   /dist/*.js   -> dist/*                  (the built plugin bundle, the
+ *                                             vendored Mermaid engine)
  *
  * It is deliberately *not* a general file server: a benchmark that can read
  * arbitrary files off disk is a liability, and the allow-list makes the page's
@@ -43,6 +44,7 @@ const resolve = (pathname, artifact) => {
   if (pathname.startsWith('/bench/')) return join(PKG_ROOT, pathname)
   if (pathname === '/src/theme.js') return join(PKG_ROOT, 'src', 'theme.js')
   if (pathname === '/dist/client.js') return artifact ?? join(PKG_ROOT, 'dist', 'client.js')
+  if (pathname === '/dist/client.mermaid.js') return join(PKG_ROOT, 'dist', 'client.mermaid.js')
   return null
 }
 

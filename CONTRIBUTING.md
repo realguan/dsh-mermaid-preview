@@ -27,7 +27,7 @@ npm run demo    # 启动零依赖演示页 http://localhost:8090
 - [ ] 主题菜单可切换全部风格、立即重绘并记住选择（刷新后仍在）
 - [ ] 源码视图不再出现第二行「代码块」横幅
 - [ ] 宽图按可读尺寸横向滚动，右上角渐隐提示在滚到末尾后消失
-- [ ] 语法错误 / CDN 不可达时保留代码块并显示安静的提示条（详情可展开）
+- [ ] 语法错误 / 引擎缺失时保留代码块并显示安静的提示条（详情可展开）
 - [ ] 停用插件（或 `remove_bundle`）后样式、观察器、注入节点全部移除
 
 ## 代码规范
@@ -36,7 +36,9 @@ npm run demo    # 启动零依赖演示页 http://localhost:8090
   `export default`（构建脚本据此包出两种产物）。`src/theme.js` 只允许
   `export const/function`（构建时会被内联、去掉 export）。需要给自检用的内部函数放在
   `dsh:test-only` 标记之间，构建时会被剥掉。
-- 不引入运行时依赖（CDN 加载 Mermaid 除外）；工具脚本只用 Node 内置模块。
+- 不引入运行时依赖：Mermaid 引擎随包附带（`dist/client.mermaid.js`，由
+  `scripts/vendor-engine.mjs` 生成），插件运行时**不联网**；工具脚本只用 Node
+  内置模块。
 - 样式只用 `cordis_inspect_query` 的 `Theme` 列出的 `--dsw-alias-*` token。
 - 提交信息使用 Conventional Commits 风格（`feat:` / `fix:` / `docs:` …）。
 

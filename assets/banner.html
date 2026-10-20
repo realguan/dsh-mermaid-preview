@@ -91,7 +91,8 @@
   </div>
 
   <script>
-    const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.16.1/dist/mermaid.min.js'
+    // The engine the plugin ships with; the banner is generated offline.
+    const ENGINE = '../dist/client.mermaid.js'
     const CODE = `flowchart LR
     subgraph 人类侧
         Owner[责任人<br/>审核与问责]
@@ -118,7 +119,7 @@
     Owner -->|通过 / 驳回| Track`
 
     const tag = document.createElement('script')
-    tag.src = CDN
+    tag.src = ENGINE
     tag.onload = async () => {
       mermaid.initialize({
         startOnLoad: false,
@@ -132,7 +133,7 @@
       // signal completion for headless screenshot
       document.title = 'dsh-mermaid-preview banner [ready]'
     }
-    tag.onerror = () => { document.body.innerHTML = 'CDN failed' }
+    tag.onerror = () => { document.body.innerHTML = 'engine failed' }
     document.head.append(tag)
   </script>
 </body>

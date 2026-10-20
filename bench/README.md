@@ -23,9 +23,9 @@ headless Chromium at 1440x900 / DPR 1, and drives the **real plugin**: it loads
 waits for the plugin's own `data-dsh-mermaid="done"` marker. Nothing inside
 `src/` or `dist/` is stubbed, patched or copied: `scan`, the 250 ms settle
 timer, the serial queue, `configure()`, `mermaid.render()`, `innerHTML` and
-`fitReading()` are all the shipped code. Mermaid is loaded from the same pinned
-CDN URL the plugin uses, and the first two renders are discarded (JIT, font and
-dagre warmup). Flags: `--variant <name>` (default `radix`, written to the
+`fitReading()` are all the shipped code. Mermaid is loaded from the same
+vendored engine the plugin ships with (`dist/client.mermaid.js`), and the first
+two renders are discarded (JIT, font and dagre warmup). Flags: `--variant <name>` (default `radix`, written to the
 plugin's own `localStorage` preference key), `--scheme light|dark`,
 `--reps N`, `--label NAME`, `--init-mode every|once|paired`, `--cv`,
 `--contain`, `--iso`, `--no-probe`, `--no-burst`, `--no-json`. Output goes to
@@ -73,8 +73,8 @@ is 20–30% on the cheap diagrams and run-to-run drift on the corpus total is
 5–12%. Cross-run deltas smaller than ~10% are therefore not resolvable — which
 is why the initialize experiment uses a paired design (`--init-mode paired`:
 both arms inside one run, order flipped per rep) rather than two runs. Mermaid
-is preloaded and already parsed before the measured window, so network and CDN
-cost are excluded by construction; the plugin's own lazy-load path is still
+is preloaded and already parsed before the measured window, so the engine load
+is excluded by construction; the plugin's own lazy-load path is still
 exercised once by the warmup. Renders started after the plugin's 250 ms settle
 are measurably more expensive than back-to-back renders (CPU/JIT state), so
 `burst` per-diagram costs are not comparable to single-diagram costs — compare

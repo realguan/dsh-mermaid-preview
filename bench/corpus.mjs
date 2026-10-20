@@ -121,7 +121,7 @@ const stateDiagram = `stateDiagram-v2
   Failed --> Disposed : stop
   Disposed --> [*]
   note right of Loading
-    Lazy CDN fetch
+    Lazy engine load
     happens here
   end note`
 

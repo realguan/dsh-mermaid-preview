@@ -143,8 +143,9 @@ paint: loadMermaid → configure（每 (scheme, variant) 一次）→ 命中 SVG
 - **主题切换只重绘看得见的图**，屏幕外的只标记待重绘；同一配色重复触发
   `theme/change` 则一次渲染都不做。
 
-- **Mermaid 按需加载**：只有真的出现候选围栏才去取 UMD（`window.mermaid` 已存在则
-  直接复用）。加载失败会清掉缓存，允许后续围栏重试。
+- **Mermaid 按需加载**：只有真的出现候选围栏才去取引擎（`window.mermaid` 已存在则
+  直接复用）。引擎随包附带（`dist/client.mermaid.js`），由 dsh 的分包路由按需送达，
+  插件全程不联网；加载失败会清掉缓存，允许后续围栏重试。
 - **重绘会关闭查看器**：`paint()` 先关掉正显示这条记录的查看器。主题切换、
   围栏文本变化都会重新 `mermaid.render`，查看器里那份克隆随之过期——留着一张
   不再存在的图比关掉更糟。
@@ -292,9 +293,15 @@ cloneNode(true) 复制 SVG          ← 代码块里那份一个字节都不动
 
 ## 8. 已知边界
 
-- **CDN 依赖**：mermaid UMD 默认从 jsDelivr 取（`src/client.js` 顶部的
-  `MERMAID_CDN`，当前固定 `11.17.2`）。离线环境或镜像不可达时，围栏保持原样并给出
-  加载失败提示。换镜像 = 改一行常量后 `npm run build`。
+- **引擎随包附带**：mermaid 引擎（当前固定 `11.17.2`）以 dsh 的「包内分块」形式
+  随插件发布（`dist/client.mermaid.js`，约 3.4MB），由 dsh 自己的
+  `/plugins/<包名>/client.mermaid.js?rev=…` 路由按需送达。插件不发任何网络请求，
+  断网 / 内网 / 隔离网都能出图。引擎文件缺失时，围栏保持原样并给出加载失败提示；
+  换版本 = 换上游文件后 `node scripts/vendor-engine.mjs --from <engine>`。
+- **动态载荷拿不到引擎**：免安装的动态载荷（`dist/dsh-mermaid-preview.client.js`）
+  本身不含引擎（3.4MB 的引擎没法塞进一次对话粘贴），所以它走 boot manifest 里的
+  分块地址——**前提是同一个 profile 里装了本插件**；否则只能由使用者自己指定引擎
+  地址（`window.__DSH_MERMAID_ENGINE_URL__`）。
 - **流式输出不渲染**：设计如此，静默 250ms 后才渲染；停顿超过静默窗口时的半截围栏
   会静默退避重试，不弹错误（见 §4 失败分级）。错误提示只在围栏文本停止变化后仍然
   解析失败时出现。

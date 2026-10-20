@@ -97,7 +97,7 @@ dsh --profile web --dump-config | grep -A2 mermaid-preview
   头部放大按钮进入全窗口查看器：模糊遮罩、悬浮工具条、滚轮缩放、拖拽平移、
   **适应窗口（小图会放大到填满窗口，上限 2.5×）** / 1:1、`Esc` 关闭（见
   [architecture.md](./docs/architecture.md) §7）
-- 🛟 **失败兜底不吓人**：CDN 不可达或语法错误时保留源码，给一条安静的提示
+- 🛟 **失败兜底不吓人**：引擎缺失或语法错误时保留源码，给一条安静的提示
   （一句人话 + 可展开的解析器详情），不再是整屏红字；文本一改就自动重试
 - 🧹 **干净卸载**：样式、观察器、定时器、脚本、注入节点全部随插件 fiber 清理
 - 🧪 **可自检**：`npm run check` 校验语法、manifest、产物一致性、识别用例与版本一致
@@ -132,14 +132,17 @@ dsh 的 Markdown 渲染器把围栏渲染成 `.md-code-block`：头部是
 语言（含 `mermaid`），头部只显示通用「代码」文案，正文是纯 `<pre>`。
 
 插件用 `MutationObserver` 找到「正文首元素是 `<pre>`」的块，再看围栏首条语句是不是
-mermaid 语句；命中后按需加载 Mermaid 11（jsDelivr CDN），把渲染好的 SVG 放进
+mermaid 语句；命中后按需加载 Mermaid 11 引擎，把渲染好的 SVG 放进
 追加在块尾部的 `.dsh-mermaid` 容器，并用一个属性隐藏原正文——**从不替换或删除
 React 拥有的节点**。
+
+引擎**随包附带**（`dist/client.mermaid.js`，约 3.4MB），由 dsh 自己的分包路由
+按需送达：插件**不联网**，断网、内网、隔离网环境都能出图。
 
 ```mermaid
 flowchart LR
     A[Markdown 渲染器<br/>输出 .md-code-block] -->|MutationObserver + 250ms 静默| B{未高亮围栏<br/>且首条语句是 mermaid?}
-    B -->|是| C[按需加载 Mermaid 11]
+    B -->|是| C[按需加载随包附带的 Mermaid 11 引擎]
     C --> D[mermaid.render<br/>securityLevel strict]
     D --> E[SVG 注入块尾容器<br/>原正文按属性隐藏]
     E --> F[保留横幅 + 复制按钮<br/>可切换 图表/源码]
@@ -176,8 +179,8 @@ docs/compatibility.md           DSH 版本兼容性声明与逐版本证据
 | 平台 | dsh Web（Client 半侧）+ 空 Host 半侧 |
 | 插件形态 | dsh bundle 客户端插件（`dsh.bundle.patch` + `dsh.client`） |
 | DSH 兼容 | 逐版本声明在 `dsh.compatibility.dshReleases`，依据见 [docs/compatibility.md](./docs/compatibility.md) |
-| Mermaid | 11.17.2（UMD，jsDelivr CDN，可按需改镜像） |
-| 依赖 | 无运行时依赖；工具脚本仅用 Node 内置模块 |
+| Mermaid | 11.17.2（随包附带的引擎，`dist/client.mermaid.js`，不联网） |
+| 依赖 | 无运行时依赖（引擎随包附带）；工具脚本仅用 Node 内置模块 |
 | 安全 | `securityLevel: 'strict'`；`suppressErrorRendering`；不采集任何数据 |
 | 许可证 | MIT |
 
@@ -188,8 +191,8 @@ docs/compatibility.md           DSH 版本兼容性声明与逐版本证据
   bundle 是最常见的原因。
 - **控制台报 `client-modules:` 开头的错**：错误信息会指出是哪个包的哪个声明有问题
   （缺 `./client` 导出、模块图成环等）。
-- **报 CDN 加载失败**：离线或 jsDelivr 不可达。改 `src/client.js` 顶部的
-  `MERMAID_CDN` 后 `npm run build`。
+- **报「图表引擎未找到」**：包里的引擎文件 `dist/client.mermaid.js` 缺失或没装上。
+  引擎随包一起安装，重新安装插件即可（`npm run check` 会检查这个文件）。
 - **流式过程中不渲染**：设计如此，围栏静默 250ms 后才渲染；流式中途的解析失败会静默
   退避重试，不会弹错误，围栏写完后自动渲染。
 - **语法错误的图等一会儿才报错**：设计如此。停顿超过静默窗口的半截围栏先静默重试
@@ -219,9 +222,8 @@ docs/compatibility.md           DSH 版本兼容性声明与逐版本证据
 
 ## 致谢
 
-- [mermaid](https://github.com/mermaid-js/mermaid) —— 图表引擎
+- [mermaid](https://github.com/mermaid-js/mermaid) —— 图表引擎（MIT，随包附带）
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) —— dsh 平台
-- [jsDelivr](https://www.jsdelivr.com/) —— CDN 分发
 
 ## License
 

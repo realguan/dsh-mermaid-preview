@@ -9,18 +9,22 @@
  *   3. Is `dist/` in sync with `src/` (a stale build is the classic silent
  *      failure of a client plugin)?
  *   4. Does the Mermaid detection heuristic behave?
- *   5. Do the docs and the demo pin the same Mermaid release as the plugin?
- *   6. Do the package version and the latest CHANGELOG release agree?
+ *   5. Is the vendored Mermaid engine present, intact, and the release the
+ *      plugin claims to render with?
+ *   6. Is any CDN dependency left in the shipped surface?
+ *   7. Do the package version and the latest CHANGELOG release agree?
  *
  * It does NOT prove what a user sees; see docs/install.md § 验证.
  */
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from './build.mjs'
+import { engineRegion } from './vendor-engine.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const failures = []
@@ -53,8 +57,10 @@ syntax('src/theme.js')
 syntax('index.js')
 syntax('dist/client.js')
 syntax('dist/dsh-mermaid-preview.client.js', true)
+syntax('dist/client.mermaid.js')
 syntax('scripts/build.mjs')
 syntax('scripts/check.mjs')
+syntax('scripts/vendor-engine.mjs')
 
 // ---- 2. manifest -----------------------------------------------------------
 const pkg = parseJson('package.json')
@@ -222,14 +228,66 @@ for (const [code, expected] of cases) {
   check(`detect ${JSON.stringify(code.slice(0, 32))} → ${expected}`, actual === expected, `got ${actual}`)
 }
 
-// ---- 6. one Mermaid pin across the repo ------------------------------------
-const pinned = /mermaid@([\d.]+)\/dist\/mermaid\.min\.js/.exec(read('src/client.js'))?.[1]
+// ---- 6. one Mermaid pin, vendored into the package -------------------------
+// The engine is not fetched at runtime: it ships inside the package. The pin
+// therefore lives in two places that must agree — the source constant (what
+// the plugin claims to render with) and the vendored chunk (what it actually
+// renders with) — and the chunk's bytes must still hash to the value its own
+// header records, so a hand-edited engine cannot pass as the pinned one.
+const pinned = /MERMAID_VERSION = '([\d.]+)'/.exec(read('src/client.js'))?.[1]
 check('src pins a Mermaid release', typeof pinned === 'string')
-for (const file of ['demo/demo.js', 'README.md', 'README.en.md', 'docs/install.md', 'docs/architecture.md']) {
+const chunkPath = join(root, 'dist', 'client.mermaid.js')
+if (check('engine chunk exists: dist/client.mermaid.js', existsSync(chunkPath))) {
+  const chunk = readFileSync(chunkPath, 'utf8')
+  const chunkVersion = /Mermaid (\d+\.\d+\.\d+)/.exec(chunk)?.[1]
+  check('engine chunk carries the pinned Mermaid release', chunkVersion === pinned, `${chunkVersion} vs ${pinned}`)
+  const region = engineRegion(chunk)
+  if (check('engine chunk holds the engine between its markers', region !== null)) {
+    const hash = createHash('sha256').update(region).digest('hex')
+    const recorded = /sha256\(engine\) = ([0-9a-f]{64})/.exec(chunk)?.[1]
+    check('engine chunk bytes match the recorded hash', hash === recorded, `${hash} vs ${recorded}`)
+    check('engine chunk defines the Mermaid global', region.includes('globalThis["mermaid"]'))
+  }
+  check('engine chunk registers as a package-local chunk', chunk.includes('chunk: "client.mermaid.js"'))
+  check('engine chunk tolerates a page without a module loader', chunk.includes('__ModuleLoader__'))
+}
+for (const file of ['demo/demo.js', 'README.md', 'README.en.md', 'docs/install.md', 'docs/architecture.md', 'docs/compatibility.md']) {
   if (!existsSync(join(root, file))) continue
   const text = read(file)
-  if (!text.includes('mermaid@')) continue
-  check(`${file} pins mermaid@${pinned}`, text.includes(`mermaid@${pinned}`))
+  if (!/mermaid/i.test(text)) continue
+  check(`${file} pins mermaid@${pinned}`, text.includes(pinned))
+}
+
+// ---- 7. no runtime CDN ------------------------------------------------------
+// The engine is vendored, so a CDN URL left anywhere in the shipped surface
+// would quietly bring the network dependency back — and it would only fail on
+// a machine that cannot reach the internet, which is the exact case the
+// vendoring exists for. The CHANGELOG is exempt: it is a historical record.
+const CDN = /cdn\.jsdelivr\.net|MERMAID_CDN/
+for (const file of [
+  'src/client.js',
+  'src/theme.js',
+  'dist/client.js',
+  'dist/dsh-mermaid-preview.client.js',
+  'demo/demo.js',
+  'demo/index.html',
+  'bench/page.js',
+  'bench/corpus.mjs',
+  'scripts/build.mjs',
+  'scripts/serve-demo.mjs',
+  'scripts/vendor-engine.mjs',
+  'assets/banner.html',
+  'README.md',
+  'README.en.md',
+  'CONTRIBUTING.md',
+  'package.json',
+  'docs/architecture.md',
+  'docs/install.md',
+  'docs/compatibility.md',
+  'docs/design.md',
+]) {
+  if (!existsSync(join(root, file))) continue
+  check(`${file} has no CDN dependency`, !CDN.test(read(file)))
 }
 
 // ---- verdict ---------------------------------------------------------------
